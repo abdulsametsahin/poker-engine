@@ -73,7 +73,7 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
     }
 
     try {
-      const wsUrl = API.BASE_URL.replace('http://', 'ws://').replace('https://', 'wss://');
+      const wsUrl = API.BASE_URL.replace('http://', 'ws://').replace('https://', 'wss://').replace('/api', '');
       const ws = new WebSocket(`${wsUrl}/ws?token=${token}`);
 
       ws.onopen = () => {
