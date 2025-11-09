@@ -77,15 +77,15 @@ func main() {
 
 	r := mux.NewRouter()
 
-	r.HandleFunc("/api/auth/register", handleRegister).Methods("POST")
-	r.HandleFunc("/api/auth/login", handleLogin).Methods("POST")
-	r.HandleFunc("/api/tables", authMiddleware(handleGetTables)).Methods("GET")
-	r.HandleFunc("/api/tables", authMiddleware(handleCreateTable)).Methods("POST")
-	r.HandleFunc("/api/tables/{id}/join", authMiddleware(handleJoinTable)).Methods("POST")
-	r.HandleFunc("/api/matchmaking/join", authMiddleware(handleJoinMatchmaking)).Methods("POST")
-	r.HandleFunc("/ws", handleWebSocket)
-
 	r.Use(corsMiddleware)
+
+	r.HandleFunc("/api/auth/register", handleRegister).Methods("POST", "OPTIONS")
+	r.HandleFunc("/api/auth/login", handleLogin).Methods("POST", "OPTIONS")
+	r.HandleFunc("/api/tables", authMiddleware(handleGetTables)).Methods("GET", "OPTIONS")
+	r.HandleFunc("/api/tables", authMiddleware(handleCreateTable)).Methods("POST", "OPTIONS")
+	r.HandleFunc("/api/tables/{id}/join", authMiddleware(handleJoinTable)).Methods("POST", "OPTIONS")
+	r.HandleFunc("/api/matchmaking/join", authMiddleware(handleJoinMatchmaking)).Methods("POST", "OPTIONS")
+	r.HandleFunc("/ws", handleWebSocket)
 
 	port := getEnv("SERVER_PORT", "8080")
 	log.Printf("Server starting on port %s", port)
