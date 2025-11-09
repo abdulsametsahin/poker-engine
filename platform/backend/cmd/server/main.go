@@ -818,10 +818,8 @@ func sendTableState(c *Client, tableID string) {
 			communityCards[i] = card.String()
 		}
 
-		// Safely calculate pot
-		if state.CurrentHand.Pot != nil {
-			pot = state.CurrentHand.Pot.Main + sumSidePots(state.CurrentHand.Pot.Side)
-		}
+		// Calculate pot (Pot is a struct, not a pointer, so it always exists)
+		pot = state.CurrentHand.Pot.Main + sumSidePots(state.CurrentHand.Pot.Side)
 
 		bettingRound = string(state.CurrentHand.BettingRound)
 		currentBet = state.CurrentHand.CurrentBet
@@ -952,10 +950,8 @@ func broadcastTableState(tableID string) {
 					communityCards[i] = card.String()
 				}
 
-				// Safely calculate pot
-				if state.CurrentHand.Pot != nil {
-					pot = state.CurrentHand.Pot.Main + sumSidePots(state.CurrentHand.Pot.Side)
-				}
+				// Calculate pot (Pot is a struct, not a pointer, so it always exists)
+				pot = state.CurrentHand.Pot.Main + sumSidePots(state.CurrentHand.Pot.Side)
 
 				bettingRound = string(state.CurrentHand.BettingRound)
 				currentBet = state.CurrentHand.CurrentBet
