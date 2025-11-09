@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Typography } from '@mui/material';
+import { Box, Typography, SxProps, Theme } from '@mui/material';
 import { COLORS, RADIUS } from '../../constants';
 
 interface BadgeProps {
@@ -7,6 +7,7 @@ interface BadgeProps {
   variant?: 'success' | 'danger' | 'warning' | 'info' | 'primary' | 'secondary';
   size?: 'small' | 'medium';
   pulse?: boolean;
+  sx?: SxProps<Theme>;
 }
 
 export const Badge: React.FC<BadgeProps> = ({
@@ -14,6 +15,7 @@ export const Badge: React.FC<BadgeProps> = ({
   variant = 'primary',
   size = 'medium',
   pulse = false,
+  sx,
 }) => {
   const variantStyles = {
     primary: {
@@ -75,6 +77,7 @@ export const Badge: React.FC<BadgeProps> = ({
           },
           animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
         }),
+        ...sx,
       }}
     >
       <Typography

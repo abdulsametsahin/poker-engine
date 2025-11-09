@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Container, Typography, Stack, Dialog, DialogContent, LinearProgress, Grid, Tabs, Tab, IconButton } from '@mui/material';
+import { Box, Container, Typography, Stack, Dialog, DialogContent, LinearProgress, Tabs, Tab, IconButton } from '@mui/material';
 import { PlayArrow, Group, EmojiEvents, History, Close, AccessTime } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { tableAPI, matchmakingAPI } from '../services/api';
@@ -305,8 +305,8 @@ export const Lobby: React.FC = () => {
               <PlayArrow sx={{ mr: 1, verticalAlign: 'middle' }} />
               Quick Match
             </Typography>
-            <Grid container spacing={3}>
-              <Grid item xs={12} md={6}>
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 3 }}>
+              <Box>
                 <GameModeCard
                   title="Heads-Up"
                   description="1 vs 1 intense poker action"
@@ -318,8 +318,8 @@ export const Lobby: React.FC = () => {
                   onJoin={() => handleQuickMatch('headsup')}
                   disabled={loading || matchmaking !== null}
                 />
-              </Grid>
-              <Grid item xs={12} md={6}>
+              </Box>
+              <Box>
                 <GameModeCard
                   title="3-Player"
                   description="Three-way poker showdown"
@@ -331,8 +331,8 @@ export const Lobby: React.FC = () => {
                   onJoin={() => handleQuickMatch('3player')}
                   disabled={loading || matchmaking !== null}
                 />
-              </Grid>
-            </Grid>
+              </Box>
+            </Box>
           </Card>
 
           {/* Tables Section */}
@@ -348,9 +348,9 @@ export const Lobby: React.FC = () => {
               {activeTab === 0 && (
                 <>
                   {activeTables.length > 0 ? (
-                    <Grid container spacing={3}>
+                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)', lg: 'repeat(3, 1fr)' }, gap: 3 }}>
                       {activeTables.map((table) => (
-                        <Grid item xs={12} md={6} lg={4} key={table.id}>
+                        <Box key={table.id}>
                           <Card
                             variant="default"
                             sx={{
@@ -447,9 +447,9 @@ export const Lobby: React.FC = () => {
                               </Button>
                             </Stack>
                           </Card>
-                        </Grid>
+                        </Box>
                       ))}
-                    </Grid>
+                    </Box>
                   ) : (
                     <EmptyState
                       icon={<EmojiEvents />}
@@ -463,9 +463,9 @@ export const Lobby: React.FC = () => {
               {activeTab === 1 && (
                 <>
                   {pastTables.length > 0 ? (
-                    <Grid container spacing={3}>
+                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)', lg: 'repeat(3, 1fr)' }, gap: 3 }}>
                       {pastTables.map((table) => (
-                        <Grid item xs={12} md={6} lg={4} key={table.id}>
+                        <Box key={table.id}>
                           <Card variant="default" sx={{ height: '100%', opacity: 0.9 }}>
                             <Stack spacing={2}>
                               <Box>
@@ -521,9 +521,9 @@ export const Lobby: React.FC = () => {
                               </Box>
                             </Stack>
                           </Card>
-                        </Grid>
+                        </Box>
                       ))}
-                    </Grid>
+                    </Box>
                   ) : (
                     <EmptyState
                       icon={<History />}

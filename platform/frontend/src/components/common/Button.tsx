@@ -3,7 +3,7 @@ import { Button as MuiButton, ButtonProps as MuiButtonProps, CircularProgress } 
 import { COLORS } from '../../constants';
 
 interface ButtonProps extends Omit<MuiButtonProps, 'variant'> {
-  variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'success';
+  variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'success' | 'warning';
   loading?: boolean;
   fullWidth?: boolean;
 }
@@ -60,6 +60,18 @@ export const Button: React.FC<ButtonProps> = ({
       '&:hover': {
         background: `linear-gradient(135deg, ${COLORS.success.light} 0%, ${COLORS.success.main} 100%)`,
         boxShadow: `0 0 20px ${COLORS.success.glow}`,
+      },
+      '&:disabled': {
+        background: COLORS.background.tertiary,
+        color: COLORS.text.disabled,
+      },
+    },
+    warning: {
+      background: `linear-gradient(135deg, ${COLORS.warning.main} 0%, ${COLORS.warning.dark} 100%)`,
+      color: COLORS.text.inverse,
+      '&:hover': {
+        background: `linear-gradient(135deg, ${COLORS.warning.light} 0%, ${COLORS.warning.main} 100%)`,
+        boxShadow: `0 0 20px ${COLORS.warning.glow}`,
       },
       '&:disabled': {
         background: COLORS.background.tertiary,

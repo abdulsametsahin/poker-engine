@@ -233,9 +233,9 @@ export const GAME = {
   // UI
   PLAYER_SEAT_SIZE: 120,
   CARD_SIZES: {
-    small: { width: 45, height: 65 },
-    medium: { width: 60, height: 85 },
-    large: { width: 75, height: 105 },
+    small: { width: 45, height: 65, fontSize: 14 },
+    medium: { width: 60, height: 85, fontSize: 18 },
+    large: { width: 75, height: 105, fontSize: 22 },
   },
   AVATAR_SIZES: {
     small: 32,

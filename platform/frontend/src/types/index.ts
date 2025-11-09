@@ -117,6 +117,8 @@ export interface WSMessage<T = any> {
 }
 
 export type WSMessageType =
+  | 'subscribe_table'
+  | 'game_action'
   | 'match_found'
   | 'table_state'
   | 'game_update'
