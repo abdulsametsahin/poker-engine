@@ -29,7 +29,9 @@ export const tableAPI = {
 };
 
 export const matchmakingAPI = {
-  join: () => api.post('/matchmaking/join'),
+  join: (gameMode: string) => api.post('/matchmaking/join', { game_mode: gameMode }),
+  status: () => api.get('/matchmaking/status'),
+  leave: () => api.post('/matchmaking/leave'),
 };
 
 export default api;

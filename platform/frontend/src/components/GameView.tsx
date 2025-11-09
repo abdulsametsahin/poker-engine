@@ -1,17 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import {
   Box,
-  Card,
-  CardContent,
   Button,
-  Typography,
-  Avatar,
-  Chip,
   Stack,
   TextField,
+  Chip,
 } from '@mui/material';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useWebSocket } from '../hooks/useWebSocket';
+import PokerTable from './PokerTable';
 
 interface Player {
   user_id: string;
@@ -22,14 +19,24 @@ interface Player {
   cards?: string[];
 }
 
+interface TableState {
+  table_id?: string;
+  players: Player[];
+  community_cards?: string[];
+  pot?: number;
+  current_turn?: string;
+  status?: string;
+  betting_round?: string;
+  current_bet?: number;
+  action_deadline?: string;
+}
+
 export const GameView: React.FC = () => {
   const { tableId } = useParams<{ tableId: string }>();
+  const navigate = useNavigate();
   const { isConnected, lastMessage, send } = useWebSocket();
-  const [players, setPlayers] = useState<Player[]>([]);
-  const [communityCards, setCommunityCards] = useState<string[]>([]);
-  const [pot, setPot] = useState(0);
+  const [tableState, setTableState] = useState<TableState | null>(null);
   const [raiseAmount, setRaiseAmount] = useState(0);
-  const [currentTurn, setCurrentTurn] = useState<string | null>(null);
 
   useEffect(() => {
     if (isConnected) {
@@ -44,20 +51,22 @@ export const GameView: React.FC = () => {
     if (lastMessage) {
       switch (lastMessage.type) {
         case 'table_state':
-          setPlayers(lastMessage.payload.players || []);
-          setCommunityCards(lastMessage.payload.community_cards || []);
-          setPot(lastMessage.payload.pot || 0);
-          setCurrentTurn(lastMessage.payload.current_turn);
-          break;
         case 'game_update':
-          setPlayers(lastMessage.payload.players || []);
-          setCommunityCards(lastMessage.payload.community_cards || []);
-          setPot(lastMessage.payload.pot || 0);
-          setCurrentTurn(lastMessage.payload.current_turn);
+          setTableState({
+            table_id: lastMessage.payload.table_id || tableId,
+            players: lastMessage.payload.players || [],
+            community_cards: lastMessage.payload.community_cards || [],
+            pot: lastMessage.payload.pot || 0,
+            current_turn: lastMessage.payload.current_turn,
+            status: lastMessage.payload.status,
+            betting_round: lastMessage.payload.betting_round,
+            current_bet: lastMessage.payload.current_bet,
+            action_deadline: lastMessage.payload.action_deadline,
+          });
           break;
       }
     }
-  }, [lastMessage]);
+  }, [lastMessage, tableId]);
 
   const handleAction = (action: string, amount?: number) => {
     send({
@@ -66,140 +75,53 @@ export const GameView: React.FC = () => {
     });
   };
 
-  const getPlayerPosition = (seatNumber: number) => {
-    const positions = [
-      { top: '70%', left: '50%' },
-      { top: '70%', left: '20%' },
-      { top: '40%', left: '10%' },
-      { top: '10%', left: '20%' },
-      { top: '10%', left: '50%' },
-      { top: '10%', left: '80%' },
-      { top: '40%', left: '90%' },
-      { top: '70%', left: '80%' },
-    ];
-    return positions[seatNumber] || positions[0];
-  };
-
   return (
-    <Box sx={{ height: '100vh', bgcolor: '#0D4715', position: 'relative', overflow: 'hidden' }}>
-      <Box
-        sx={{
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          width: '70%',
-          height: '60%',
-          borderRadius: '50%',
-          bgcolor: '#116530',
-          border: '8px solid #8B4513',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Box sx={{ textAlign: 'center' }}>
-          <Typography variant="h4" sx={{ color: '#FFD700', mb: 2 }}>
-            POT: ${pot}
-          </Typography>
-          
-          {communityCards.length > 0 && (
-            <Stack direction="row" spacing={1} justifyContent="center">
-              {communityCards.map((card, idx) => (
-                <Card
-                  key={idx}
-                  sx={{
-                    width: 60,
-                    height: 90,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    bgcolor: 'white',
-                    fontWeight: 'bold',
-                  }}
-                >
-                  {card}
-                </Card>
-              ))}
-            </Stack>
-          )}
-        </Box>
+    <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', bgcolor: 'grey.100' }}>
+      {/* Main Game Area */}
+      <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
+        <PokerTable tableState={tableState} />
       </Box>
 
-      {players.map((player) => {
-        const pos = getPlayerPosition(player.seat_number);
-        const isCurrentTurn = currentTurn === player.user_id;
-        
-        return (
-          <Box
-            key={player.user_id}
-            sx={{
-              position: 'absolute',
-              ...pos,
-              transform: 'translate(-50%, -50%)',
-            }}
-          >
-            <Card
-              sx={{
-                minWidth: 140,
-                bgcolor: isCurrentTurn ? 'primary.dark' : 'background.paper',
-                border: isCurrentTurn ? '3px solid #4CAF50' : 'none',
-              }}
-            >
-              <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-                <Stack spacing={0.5} alignItems="center">
-                  <Avatar sx={{ width: 40, height: 40, bgcolor: 'secondary.main' }}>
-                    {player.user_id.slice(0, 2).toUpperCase()}
-                  </Avatar>
-                  <Typography variant="caption" noWrap sx={{ maxWidth: 120 }}>
-                    {player.user_id.slice(0, 8)}
-                  </Typography>
-                  <Chip
-                    label={`$${player.chips}`}
-                    size="small"
-                    color={player.chips > 0 ? 'success' : 'error'}
-                  />
-                  {player.bet && player.bet > 0 && (
-                    <Chip label={`Bet: $${player.bet}`} size="small" color="warning" />
-                  )}
-                  <Chip
-                    label={player.status}
-                    size="small"
-                    variant="outlined"
-                  />
-                </Stack>
-              </CardContent>
-            </Card>
-          </Box>
-        );
-      })}
-
+      {/* Action Buttons */}
       <Box
         sx={{
-          position: 'absolute',
-          bottom: 20,
-          left: '50%',
-          transform: 'translateX(-50%)',
           bgcolor: 'background.paper',
+          borderTop: '2px solid',
+          borderColor: 'divider',
           p: 2,
-          borderRadius: 2,
-          minWidth: 400,
         }}
       >
-        <Stack spacing={2}>
+        <Stack direction="row" spacing={2} justifyContent="space-between" alignItems="center">
+          {/* Connection Status & Back Button */}
           <Stack direction="row" spacing={1}>
+            <Button
+              variant="outlined"
+              onClick={() => navigate('/lobby')}
+              size="small"
+            >
+              ← Back to Lobby
+            </Button>
+            <Chip
+              label={isConnected ? 'Connected' : 'Disconnected'}
+              color={isConnected ? 'success' : 'error'}
+              size="small"
+            />
+          </Stack>
+
+          {/* Game Actions */}
+          <Stack direction="row" spacing={1} sx={{ flex: 1, maxWidth: 600, mx: 'auto' }}>
             <Button
               variant="contained"
               color="error"
               onClick={() => handleAction('fold')}
-              fullWidth
+              sx={{ flex: 1 }}
             >
               Fold
             </Button>
             <Button
-              variant="contained"
+              variant="outlined"
               onClick={() => handleAction('check')}
-              fullWidth
+              sx={{ flex: 1 }}
             >
               Check
             </Button>
@@ -207,12 +129,13 @@ export const GameView: React.FC = () => {
               variant="contained"
               color="primary"
               onClick={() => handleAction('call')}
-              fullWidth
+              sx={{ flex: 1 }}
             >
               Call
             </Button>
           </Stack>
-          
+
+          {/* Raise Controls */}
           <Stack direction="row" spacing={1}>
             <TextField
               type="number"
@@ -220,7 +143,7 @@ export const GameView: React.FC = () => {
               onChange={(e) => setRaiseAmount(Number(e.target.value))}
               size="small"
               label="Amount"
-              sx={{ flex: 1 }}
+              sx={{ width: 120 }}
             />
             <Button
               variant="contained"
@@ -238,13 +161,6 @@ export const GameView: React.FC = () => {
             </Button>
           </Stack>
         </Stack>
-      </Box>
-
-      <Box sx={{ position: 'absolute', top: 10, right: 10 }}>
-        <Chip
-          label={isConnected ? 'Connected' : 'Disconnected'}
-          color={isConnected ? 'success' : 'error'}
-        />
       </Box>
     </Box>
   );
