@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"poker-engine/engine"
 	"poker-engine/models"
+	"strconv"
 )
 
 type CommandHandler struct {
@@ -104,20 +105,28 @@ func (h *CommandHandler) handlePlayerJoin(data map[string]interface{}) models.Re
 	seatNumber := getInt(data, "seatNumber")
 	buyIn := getInt(data, "buyIn")
 
-	if seatNumber == 0 {
-		table, err := h.tableManager.GetTable(tableID)
-		if err != nil {
-			return models.Response{Success: false, Error: err.Error()}
-		}
+	// Auto-assign seat if seatNumber is not specified (< 0) or is invalid
+	table, err := h.tableManager.GetTable(tableID)
+	if err != nil {
+		return models.Response{Success: false, Error: err.Error()}
+	}
+	
+	// If seat number is invalid (< 0 or >= maxPlayers), find first available seat
+	if seatNumber < 0 || seatNumber >= len(table.Players) {
+		foundSeat := false
 		for i, player := range table.Players {
 			if player == nil {
 				seatNumber = i
+				foundSeat = true
 				break
 			}
 		}
+		if !foundSeat {
+			return models.Response{Success: false, Error: "no available seats"}
+		}
 	}
 
-	err := h.tableManager.AddPlayer(tableID, playerID, playerName, seatNumber, buyIn)
+	err = h.tableManager.AddPlayer(tableID, playerID, playerName, seatNumber, buyIn)
 	if err != nil {
 		return models.Response{Success: false, Error: err.Error()}
 	}
@@ -230,6 +239,11 @@ func getInt(data map[string]interface{}, key string) int {
 			return int(v)
 		case int:
 			return v
+		case string:
+			// Try to parse string to int
+			if i, err := strconv.Atoi(v); err == nil {
+				return i
+			}
 		}
 	}
 	return 0
