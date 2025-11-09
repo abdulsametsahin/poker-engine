@@ -76,6 +76,12 @@ export const GameView: React.FC = () => {
     });
   };
 
+  // Find current user ID by finding the player with cards (backend only sends cards to the player)
+  const currentUserId = tableState?.players?.find(p => p.cards && p.cards.length > 0)?.user_id;
+
+  // Check if it's the current user's turn
+  const isMyTurn = tableState?.current_turn === currentUserId;
+
   return (
     <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', bgcolor: 'grey.100' }}>
       {/* Main Game Area */}
@@ -115,6 +121,7 @@ export const GameView: React.FC = () => {
               variant="contained"
               color="error"
               onClick={() => handleAction('fold')}
+              disabled={!isMyTurn}
               sx={{ flex: 1 }}
             >
               Fold
@@ -122,6 +129,7 @@ export const GameView: React.FC = () => {
             <Button
               variant="outlined"
               onClick={() => handleAction('check')}
+              disabled={!isMyTurn}
               sx={{ flex: 1 }}
             >
               Check
@@ -130,6 +138,7 @@ export const GameView: React.FC = () => {
               variant="contained"
               color="primary"
               onClick={() => handleAction('call')}
+              disabled={!isMyTurn}
               sx={{ flex: 1 }}
             >
               Call
@@ -144,12 +153,14 @@ export const GameView: React.FC = () => {
               onChange={(e) => setRaiseAmount(Number(e.target.value))}
               size="small"
               label="Amount"
+              disabled={!isMyTurn}
               sx={{ width: 120 }}
             />
             <Button
               variant="contained"
               color="secondary"
               onClick={() => handleAction('raise', raiseAmount)}
+              disabled={!isMyTurn}
             >
               Raise
             </Button>
@@ -157,6 +168,7 @@ export const GameView: React.FC = () => {
               variant="contained"
               color="warning"
               onClick={() => handleAction('allin')}
+              disabled={!isMyTurn}
             >
               All-In
             </Button>
