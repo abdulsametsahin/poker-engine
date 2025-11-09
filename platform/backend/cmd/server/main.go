@@ -805,15 +805,27 @@ func sendTableState(c *Client, tableID string) {
 		}
 	}
 
-	communityCards := make([]string, len(state.CurrentHand.CommunityCards))
-	for i, card := range state.CurrentHand.CommunityCards {
-		communityCards[i] = card.String()
-	}
-
+	communityCards := []string{}
+	pot := 0
 	var currentTurn *string
-	if state.CurrentHand.CurrentPosition >= 0 && state.CurrentHand.CurrentPosition < len(state.Players) {
-		if currentPlayer := state.Players[state.CurrentHand.CurrentPosition]; currentPlayer != nil {
-			currentTurn = &currentPlayer.PlayerID
+	bettingRound := ""
+	currentBet := 0
+
+	// Only access CurrentHand if it exists
+	if state.CurrentHand != nil {
+		communityCards = make([]string, len(state.CurrentHand.CommunityCards))
+		for i, card := range state.CurrentHand.CommunityCards {
+			communityCards[i] = card.String()
+		}
+
+		pot = state.CurrentHand.Pot.Main + sumSidePots(state.CurrentHand.Pot.Side)
+		bettingRound = string(state.CurrentHand.BettingRound)
+		currentBet = state.CurrentHand.CurrentBet
+
+		if state.CurrentHand.CurrentPosition >= 0 && state.CurrentHand.CurrentPosition < len(state.Players) {
+			if currentPlayer := state.Players[state.CurrentHand.CurrentPosition]; currentPlayer != nil {
+				currentTurn = &currentPlayer.PlayerID
+			}
 		}
 	}
 
@@ -821,15 +833,15 @@ func sendTableState(c *Client, tableID string) {
 		"table_id":        tableID,
 		"players":         players,
 		"community_cards": communityCards,
-		"pot":             state.CurrentHand.Pot.Main + sumSidePots(state.CurrentHand.Pot.Side),
+		"pot":             pot,
 		"current_turn":    currentTurn,
 		"status":          string(state.Status),
-		"betting_round":   string(state.CurrentHand.BettingRound),
-		"current_bet":     state.CurrentHand.CurrentBet,
+		"betting_round":   bettingRound,
+		"current_bet":     currentBet,
 	}
 
 	// Add action deadline if there's an active player
-	if !state.CurrentHand.ActionDeadline.IsZero() {
+	if state.CurrentHand != nil && !state.CurrentHand.ActionDeadline.IsZero() {
 		payload["action_deadline"] = state.CurrentHand.ActionDeadline.Format(time.RFC3339)
 	}
 
@@ -920,15 +932,27 @@ func broadcastTableState(tableID string) {
 				}
 			}
 
-			communityCards := make([]string, len(state.CurrentHand.CommunityCards))
-			for i, card := range state.CurrentHand.CommunityCards {
-				communityCards[i] = card.String()
-			}
-
+			communityCards := []string{}
+			pot := 0
 			var currentTurn *string
-			if state.CurrentHand.CurrentPosition >= 0 && state.CurrentHand.CurrentPosition < len(state.Players) {
-				if currentPlayer := state.Players[state.CurrentHand.CurrentPosition]; currentPlayer != nil {
-					currentTurn = &currentPlayer.PlayerID
+			bettingRound := ""
+			currentBet := 0
+
+			// Only access CurrentHand if it exists
+			if state.CurrentHand != nil {
+				communityCards = make([]string, len(state.CurrentHand.CommunityCards))
+				for i, card := range state.CurrentHand.CommunityCards {
+					communityCards[i] = card.String()
+				}
+
+				pot = state.CurrentHand.Pot.Main + sumSidePots(state.CurrentHand.Pot.Side)
+				bettingRound = string(state.CurrentHand.BettingRound)
+				currentBet = state.CurrentHand.CurrentBet
+
+				if state.CurrentHand.CurrentPosition >= 0 && state.CurrentHand.CurrentPosition < len(state.Players) {
+					if currentPlayer := state.Players[state.CurrentHand.CurrentPosition]; currentPlayer != nil {
+						currentTurn = &currentPlayer.PlayerID
+					}
 				}
 			}
 
@@ -936,15 +960,15 @@ func broadcastTableState(tableID string) {
 				"table_id":        tableID,
 				"players":         players,
 				"community_cards": communityCards,
-				"pot":             state.CurrentHand.Pot.Main + sumSidePots(state.CurrentHand.Pot.Side),
+				"pot":             pot,
 				"current_turn":    currentTurn,
 				"status":          string(state.Status),
-				"betting_round":   string(state.CurrentHand.BettingRound),
-				"current_bet":     state.CurrentHand.CurrentBet,
+				"betting_round":   bettingRound,
+				"current_bet":     currentBet,
 			}
 
 			// Add action deadline if there's an active player
-			if !state.CurrentHand.ActionDeadline.IsZero() {
+			if state.CurrentHand != nil && !state.CurrentHand.ActionDeadline.IsZero() {
 				payload["action_deadline"] = state.CurrentHand.ActionDeadline.Format(time.RFC3339)
 			}
 
