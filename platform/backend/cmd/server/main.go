@@ -818,7 +818,11 @@ func sendTableState(c *Client, tableID string) {
 			communityCards[i] = card.String()
 		}
 
-		pot = state.CurrentHand.Pot.Main + sumSidePots(state.CurrentHand.Pot.Side)
+		// Safely calculate pot
+		if state.CurrentHand.Pot != nil {
+			pot = state.CurrentHand.Pot.Main + sumSidePots(state.CurrentHand.Pot.Side)
+		}
+
 		bettingRound = string(state.CurrentHand.BettingRound)
 		currentBet = state.CurrentHand.CurrentBet
 
@@ -852,6 +856,9 @@ func sendTableState(c *Client, tableID string) {
 }
 
 func sumSidePots(sidePots []pokerModels.SidePot) int {
+	if sidePots == nil {
+		return 0
+	}
 	total := 0
 	for _, sp := range sidePots {
 		total += sp.Amount
@@ -945,7 +952,11 @@ func broadcastTableState(tableID string) {
 					communityCards[i] = card.String()
 				}
 
-				pot = state.CurrentHand.Pot.Main + sumSidePots(state.CurrentHand.Pot.Side)
+				// Safely calculate pot
+				if state.CurrentHand.Pot != nil {
+					pot = state.CurrentHand.Pot.Main + sumSidePots(state.CurrentHand.Pot.Side)
+				}
+
 				bettingRound = string(state.CurrentHand.BettingRound)
 				currentBet = state.CurrentHand.CurrentBet
 
