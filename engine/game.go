@@ -58,6 +58,21 @@ func (g *Game) StartNewHand() error {
 	}
 
 	g.table.Status = models.StatusPlaying
+	
+	// Fire handStart event
+	if g.onEvent != nil {
+		g.onEvent(models.Event{
+			Event:   "handStart",
+			TableID: g.table.TableID,
+			Data: map[string]interface{}{
+				"handNumber":         g.table.CurrentHand.HandNumber,
+				"dealerPosition":     g.table.CurrentHand.DealerPosition,
+				"smallBlindPosition": g.table.CurrentHand.SmallBlindPosition,
+				"bigBlindPosition":   g.table.CurrentHand.BigBlindPosition,
+			},
+		})
+	}
+	
 	g.startActionTimer()
 	return nil
 }

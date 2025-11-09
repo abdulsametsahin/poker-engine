@@ -5,6 +5,7 @@ import {
   Stack,
   TextField,
   Chip,
+  Typography,
 } from '@mui/material';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useWebSocket } from '../hooks/useWebSocket';
@@ -157,7 +158,13 @@ export const GameView: React.FC = () => {
   };
 
   return (
-    <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', bgcolor: 'grey.100' }}>
+    <Box sx={{
+      height: '100vh',
+      display: 'flex',
+      flexDirection: 'column',
+      bgcolor: '#0f1419',
+      backgroundImage: 'radial-gradient(circle at 20% 30%, rgba(16, 185, 129, 0.05) 0%, transparent 50%), radial-gradient(circle at 80% 70%, rgba(99, 102, 241, 0.05) 0%, transparent 50%)',
+    }}>
       {/* Game Complete Modal - Takes priority over winner modal */}
       {gameComplete ? (
         <GameCompleteDisplay
@@ -172,112 +179,242 @@ export const GameView: React.FC = () => {
         <WinnerDisplay winners={tableState.winners} onClose={handleCloseWinners} />
       ) : null}
 
+      {/* Compact Header */}
+      <Box sx={{
+        bgcolor: 'rgba(17, 24, 39, 0.95)',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+        backdropFilter: 'blur(10px)',
+        px: 2,
+        py: 1,
+      }}>
+        <Stack direction="row" justifyContent="space-between" alignItems="center">
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Button
+              onClick={() => navigate('/lobby')}
+              size="small"
+              sx={{
+                color: 'rgba(255, 255, 255, 0.7)',
+                fontSize: '12px',
+                minWidth: 'auto',
+                px: 1.5,
+                py: 0.5,
+                '&:hover': { color: '#fff', bgcolor: 'rgba(255, 255, 255, 0.05)' }
+              }}
+            >
+              ← BACK TO LOBBY
+            </Button>
+            <Box sx={{
+              px: 1.5,
+              py: 0.5,
+              borderRadius: 1,
+              bgcolor: isConnected ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+              border: `1px solid ${isConnected ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+            }}>
+              <Typography variant="caption" sx={{ color: isConnected ? '#10b981' : '#ef4444', fontSize: '11px', fontWeight: 600 }}>
+                {isConnected ? 'Connected' : 'Disconnected'}
+              </Typography>
+            </Box>
+          </Stack>
+
+          <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: '11px' }}>
+            {tableState?.table_id?.slice(0, 16)}...
+          </Typography>
+
+          <Chip
+            label={tableState?.status || 'waiting'}
+            size="small"
+            sx={{
+              bgcolor: tableState?.status === 'playing' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(156, 163, 175, 0.15)',
+              color: tableState?.status === 'playing' ? '#10b981' : '#9ca3af',
+              border: `1px solid ${tableState?.status === 'playing' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(156, 163, 175, 0.3)'}`,
+              fontSize: '11px',
+              height: '22px',
+              fontWeight: 600,
+            }}
+          />
+        </Stack>
+      </Box>
+
       {/* Main Game Area */}
-      <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
+      <Box sx={{ flex: 1, overflow: 'hidden', p: 1.5 }}>
         <PokerTable tableState={tableState} />
       </Box>
 
-      {/* Action Buttons */}
+      {/* Compact Action Buttons */}
       <Box
         sx={{
-          bgcolor: 'background.paper',
-          borderTop: '2px solid',
-          borderColor: 'divider',
-          p: 2,
+          bgcolor: 'rgba(17, 24, 39, 0.95)',
+          borderTop: '1px solid rgba(255, 255, 255, 0.05)',
+          backdropFilter: 'blur(10px)',
+          px: 2,
+          py: 1.5,
         }}
       >
-        <Stack direction="row" spacing={2} justifyContent="space-between" alignItems="center">
-          {/* Connection Status & Back Button */}
-          <Stack direction="row" spacing={1}>
-            <Button
-              variant="outlined"
-              onClick={() => navigate('/lobby')}
-              size="small"
-            >
-              ← Back to Lobby
-            </Button>
-            <Chip
-              label={isConnected ? 'Connected' : 'Disconnected'}
-              color={isConnected ? 'success' : 'error'}
-              size="small"
-            />
-          </Stack>
+        <Stack direction="row" spacing={1} justifyContent="center" alignItems="center" sx={{ maxWidth: 1200, mx: 'auto' }}>
+          {/* Primary Actions */}
+          <Button
+            variant="contained"
+            onClick={() => handleAction('fold')}
+            disabled={!isMyTurn}
+            sx={{
+              minWidth: 90,
+              height: 42,
+              bgcolor: 'rgba(239, 68, 68, 0.15)',
+              color: '#ef4444',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              fontWeight: 700,
+              fontSize: '13px',
+              '&:hover': { bgcolor: 'rgba(239, 68, 68, 0.25)', borderColor: 'rgba(239, 68, 68, 0.5)' },
+              '&:disabled': { bgcolor: 'rgba(75, 85, 99, 0.1)', color: 'rgba(156, 163, 175, 0.3)', border: '1px solid rgba(75, 85, 99, 0.2)' }
+            }}
+          >
+            FOLD
+          </Button>
 
-          {/* Game Actions */}
-          <Stack direction="row" spacing={1} sx={{ flex: 1, maxWidth: 600, mx: 'auto' }}>
-            <Button
-              variant="contained"
-              color="error"
-              onClick={() => handleAction('fold')}
-              disabled={!isMyTurn}
-              sx={{ flex: 1 }}
-            >
-              Fold
-            </Button>
-            <Button
-              variant="outlined"
-              onClick={() => handleAction('check')}
-              disabled={!isMyTurn}
-              sx={{ flex: 1 }}
-            >
-              Check
-            </Button>
-            <Button
-              variant="contained"
-              color="primary"
-              onClick={() => handleAction('call')}
-              disabled={!isMyTurn}
-              sx={{ flex: 1 }}
-            >
-              Call
-            </Button>
-          </Stack>
+          <Button
+            variant="outlined"
+            onClick={() => handleAction('check')}
+            disabled={!isMyTurn}
+            sx={{
+              minWidth: 90,
+              height: 42,
+              bgcolor: 'rgba(59, 130, 246, 0.05)',
+              color: '#60a5fa',
+              border: '1px solid rgba(59, 130, 246, 0.3)',
+              fontWeight: 700,
+              fontSize: '13px',
+              '&:hover': { bgcolor: 'rgba(59, 130, 246, 0.15)', borderColor: 'rgba(59, 130, 246, 0.5)' },
+              '&:disabled': { bgcolor: 'rgba(75, 85, 99, 0.1)', color: 'rgba(156, 163, 175, 0.3)', border: '1px solid rgba(75, 85, 99, 0.2)' }
+            }}
+          >
+            CHECK
+          </Button>
 
-          {/* Raise Controls */}
-          <Stack direction="row" spacing={1} alignItems="center">
-            <TextField
-              type="number"
-              value={raiseAmount}
-              onChange={(e) => setRaiseAmount(e.target.value)}
-              size="small"
-              label={`Raise (min: ${minRaiseAmount})`}
-              disabled={!isMyTurn}
-              sx={{ width: 150 }}
-              inputProps={{ min: minRaiseAmount }}
-            />
-            <Button
-              variant="outlined"
-              size="small"
-              onClick={() => setRaiseAmount(minRaiseAmount.toString())}
-              disabled={!isMyTurn}
-            >
-              Min
-            </Button>
-            <Button
-              variant="outlined"
-              size="small"
-              onClick={() => setRaiseAmount((tableState?.pot || 0).toString())}
-              disabled={!isMyTurn}
-            >
-              Pot
-            </Button>
-            <Button
-              variant="contained"
-              color="secondary"
-              onClick={() => handleAction('raise', Number(raiseAmount))}
-              disabled={!isMyTurn || !raiseAmount || Number(raiseAmount) < minRaiseAmount}
-            >
-              Raise
-            </Button>
-            <Button
-              variant="contained"
-              color="warning"
-              onClick={() => handleAction('allin')}
-              disabled={!isMyTurn}
-            >
-              All-In
-            </Button>
-          </Stack>
+          <Button
+            variant="contained"
+            onClick={() => handleAction('call')}
+            disabled={!isMyTurn}
+            sx={{
+              minWidth: 90,
+              height: 42,
+              bgcolor: 'rgba(16, 185, 129, 0.15)',
+              color: '#10b981',
+              border: '1px solid rgba(16, 185, 129, 0.3)',
+              fontWeight: 700,
+              fontSize: '13px',
+              '&:hover': { bgcolor: 'rgba(16, 185, 129, 0.25)', borderColor: 'rgba(16, 185, 129, 0.5)' },
+              '&:disabled': { bgcolor: 'rgba(75, 85, 99, 0.1)', color: 'rgba(156, 163, 175, 0.3)', border: '1px solid rgba(75, 85, 99, 0.2)' }
+            }}
+          >
+            CALL
+          </Button>
+
+          <Box sx={{ width: 1, height: 32, bgcolor: 'rgba(255, 255, 255, 0.05)', mx: 0.5 }} />
+
+          {/* Raise Amount Input */}
+          <TextField
+            type="number"
+            value={raiseAmount}
+            onChange={(e) => setRaiseAmount(e.target.value)}
+            size="small"
+            placeholder={`Min: ${minRaiseAmount}`}
+            disabled={!isMyTurn}
+            sx={{
+              width: 120,
+              '& .MuiOutlinedInput-root': {
+                height: 42,
+                bgcolor: 'rgba(31, 41, 55, 0.5)',
+                color: '#fff',
+                fontSize: '13px',
+                fontWeight: 600,
+                '& fieldset': { borderColor: 'rgba(75, 85, 99, 0.3)' },
+                '&:hover fieldset': { borderColor: 'rgba(99, 102, 241, 0.5)' },
+                '&.Mui-focused fieldset': { borderColor: '#6366f1' },
+                '&.Mui-disabled': { bgcolor: 'rgba(31, 41, 55, 0.3)' }
+              },
+              '& input': { textAlign: 'center', padding: '0 8px' }
+            }}
+            inputProps={{ min: minRaiseAmount }}
+          />
+
+          <Button
+            size="small"
+            onClick={() => setRaiseAmount(minRaiseAmount.toString())}
+            disabled={!isMyTurn}
+            sx={{
+              minWidth: 50,
+              height: 42,
+              bgcolor: 'rgba(75, 85, 99, 0.2)',
+              color: 'rgba(255, 255, 255, 0.7)',
+              border: '1px solid rgba(75, 85, 99, 0.3)',
+              fontSize: '11px',
+              fontWeight: 700,
+              '&:hover': { bgcolor: 'rgba(75, 85, 99, 0.3)' },
+              '&:disabled': { color: 'rgba(156, 163, 175, 0.3)' }
+            }}
+          >
+            MIN
+          </Button>
+
+          <Button
+            size="small"
+            onClick={() => setRaiseAmount((tableState?.pot || 0).toString())}
+            disabled={!isMyTurn}
+            sx={{
+              minWidth: 50,
+              height: 42,
+              bgcolor: 'rgba(75, 85, 99, 0.2)',
+              color: 'rgba(255, 255, 255, 0.7)',
+              border: '1px solid rgba(75, 85, 99, 0.3)',
+              fontSize: '11px',
+              fontWeight: 700,
+              '&:hover': { bgcolor: 'rgba(75, 85, 99, 0.3)' },
+              '&:disabled': { color: 'rgba(156, 163, 175, 0.3)' }
+            }}
+          >
+            POT
+          </Button>
+
+          <Button
+            variant="contained"
+            onClick={() => handleAction('raise', Number(raiseAmount))}
+            disabled={!isMyTurn || !raiseAmount || Number(raiseAmount) < minRaiseAmount}
+            sx={{
+              minWidth: 90,
+              height: 42,
+              bgcolor: 'rgba(99, 102, 241, 0.15)',
+              color: '#6366f1',
+              border: '1px solid rgba(99, 102, 241, 0.3)',
+              fontWeight: 700,
+              fontSize: '13px',
+              '&:hover': { bgcolor: 'rgba(99, 102, 241, 0.25)', borderColor: 'rgba(99, 102, 241, 0.5)' },
+              '&:disabled': { bgcolor: 'rgba(75, 85, 99, 0.1)', color: 'rgba(156, 163, 175, 0.3)', border: '1px solid rgba(75, 85, 99, 0.2)' }
+            }}
+          >
+            RAISE
+          </Button>
+
+          <Button
+            variant="contained"
+            onClick={() => handleAction('allin')}
+            disabled={!isMyTurn}
+            sx={{
+              minWidth: 90,
+              height: 42,
+              bgcolor: 'linear-gradient(135deg, rgba(251, 191, 36, 0.15) 0%, rgba(245, 158, 11, 0.15) 100%)',
+              color: '#fbbf24',
+              border: '1px solid rgba(251, 191, 36, 0.3)',
+              fontWeight: 700,
+              fontSize: '13px',
+              '&:hover': {
+                bgcolor: 'linear-gradient(135deg, rgba(251, 191, 36, 0.25) 0%, rgba(245, 158, 11, 0.25) 100%)',
+                borderColor: 'rgba(251, 191, 36, 0.5)'
+              },
+              '&:disabled': { bgcolor: 'rgba(75, 85, 99, 0.1)', color: 'rgba(156, 163, 175, 0.3)', border: '1px solid rgba(75, 85, 99, 0.2)' }
+            }}
+          >
+            ALL-IN
+          </Button>
         </Stack>
       </Box>
     </Box>

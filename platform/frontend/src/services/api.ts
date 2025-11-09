@@ -23,6 +23,8 @@ export const authAPI = {
 
 export const tableAPI = {
   getTables: () => api.get('/tables'),
+  getActiveTables: () => api.get('/tables/active'),
+  getPastTables: () => api.get('/tables/past'),
   createTable: (data: any) => api.post('/tables', data),
   joinTable: (tableId: string, buyIn: number) =>
     api.post(`/tables/${tableId}/join`, { buy_in: buyIn }),

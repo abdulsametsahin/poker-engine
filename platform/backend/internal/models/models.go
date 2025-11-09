@@ -89,6 +89,7 @@ type MatchmakingEntry struct {
 	ID        int64      `json:"id"`
 	UserID    string     `json:"user_id"`
 	GameType  string     `json:"game_type"`
+	QueueType string     `json:"queue_type"`
 	MinBuyIn  *int       `json:"min_buy_in,omitempty"`
 	MaxBuyIn  *int       `json:"max_buy_in,omitempty"`
 	Status    string     `json:"status"`

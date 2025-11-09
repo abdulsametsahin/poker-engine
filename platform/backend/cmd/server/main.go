@@ -62,10 +62,11 @@ var tablePresets = map[string]TablePreset{
 }
 
 type GameBridge struct {
-	mu              sync.RWMutex
-	tables          map[string]*engine.Table
-	clients         map[string]*Client
-	matchmakingMu   sync.Mutex
+	mu               sync.RWMutex
+	tables           map[string]*engine.Table
+	clients          map[string]*Client
+	currentHandIDs   map[string]int64 // tableID -> current hand database ID
+	matchmakingMu    sync.Mutex
 	matchmakingQueue map[string][]string // gameMode -> []userIDs
 }
 
@@ -90,6 +91,7 @@ type WSMessage struct {
 var bridge = &GameBridge{
 	tables:           make(map[string]*engine.Table),
 	clients:          make(map[string]*Client),
+	currentHandIDs:   make(map[string]int64),
 	matchmakingQueue: make(map[string][]string),
 }
 
@@ -120,6 +122,8 @@ func main() {
 	r.HandleFunc("/api/auth/register", handleRegister).Methods("POST", "OPTIONS")
 	r.HandleFunc("/api/auth/login", handleLogin).Methods("POST", "OPTIONS")
 	r.HandleFunc("/api/tables", authMiddleware(handleGetTables)).Methods("GET", "OPTIONS")
+	r.HandleFunc("/api/tables/active", authMiddleware(handleGetActiveTables)).Methods("GET", "OPTIONS")
+	r.HandleFunc("/api/tables/past", authMiddleware(handleGetPastTables)).Methods("GET", "OPTIONS")
 	r.HandleFunc("/api/tables", authMiddleware(handleCreateTable)).Methods("POST", "OPTIONS")
 	r.HandleFunc("/api/tables/{id}/join", authMiddleware(handleJoinTable)).Methods("POST", "OPTIONS")
 	r.HandleFunc("/api/matchmaking/join", authMiddleware(handleJoinMatchmaking)).Methods("POST", "OPTIONS")
@@ -229,6 +233,104 @@ func handleGetTables(w http.ResponseWriter, r *http.Request) {
 			"max_buy_in":      maxBuyIn,
 			"current_players": currentPlayers,
 		})
+	}
+
+	respondJSON(w, http.StatusOK, tables)
+}
+
+func handleGetActiveTables(w http.ResponseWriter, r *http.Request) {
+	userID := r.Context().Value("user_id").(string)
+
+	rows, err := database.Query(`
+		SELECT t.id, t.name, t.game_type, t.status, t.small_blind, t.big_blind, t.max_players,
+			t.min_buy_in, t.max_buy_in, t.created_at,
+			COUNT(DISTINCT ts.user_id) as current_players,
+			MAX(CASE WHEN ts.user_id = ? THEN 1 ELSE 0 END) as is_playing
+		FROM tables t
+		LEFT JOIN table_seats ts ON t.id = ts.table_id AND ts.left_at IS NULL
+		WHERE t.status IN ('waiting', 'playing') AND t.completed_at IS NULL
+		GROUP BY t.id
+		ORDER BY t.created_at DESC LIMIT 50
+	`, userID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Server error")
+		return
+	}
+	defer rows.Close()
+
+	tables := []map[string]interface{}{}
+	for rows.Next() {
+		var id, name, gameType, status string
+		var smallBlind, bigBlind, maxPlayers, minBuyIn, maxBuyIn, currentPlayers, isPlaying int
+		var createdAt time.Time
+		rows.Scan(&id, &name, &gameType, &status, &smallBlind, &bigBlind, &maxPlayers, &minBuyIn, &maxBuyIn, &createdAt, &currentPlayers, &isPlaying)
+
+		tables = append(tables, map[string]interface{}{
+			"id":              id,
+			"name":            name,
+			"game_type":       gameType,
+			"status":          status,
+			"small_blind":     smallBlind,
+			"big_blind":       bigBlind,
+			"max_players":     maxPlayers,
+			"min_buy_in":      minBuyIn,
+			"max_buy_in":      maxBuyIn,
+			"current_players": currentPlayers,
+			"is_playing":      isPlaying == 1,
+			"created_at":      createdAt,
+		})
+	}
+
+	respondJSON(w, http.StatusOK, tables)
+}
+
+func handleGetPastTables(w http.ResponseWriter, r *http.Request) {
+	userID := r.Context().Value("user_id").(string)
+
+	rows, err := database.Query(`
+		SELECT t.id, t.name, t.game_type, t.small_blind, t.big_blind, t.max_players,
+			t.min_buy_in, t.max_buy_in, t.completed_at,
+			COUNT(DISTINCT ts.user_id) as total_players,
+			MAX(CASE WHEN ts.user_id = ? THEN 1 ELSE 0 END) as participated,
+			(SELECT COUNT(*) FROM hands WHERE table_id = t.id) as total_hands
+		FROM tables t
+		LEFT JOIN table_seats ts ON t.id = ts.table_id
+		WHERE t.completed_at IS NOT NULL
+		GROUP BY t.id
+		ORDER BY t.completed_at DESC LIMIT 50
+	`, userID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Server error")
+		return
+	}
+	defer rows.Close()
+
+	tables := []map[string]interface{}{}
+	for rows.Next() {
+		var id, name, gameType string
+		var smallBlind, bigBlind, maxPlayers, minBuyIn, maxBuyIn, totalPlayers, participated, totalHands int
+		var completedAt sql.NullTime
+		rows.Scan(&id, &name, &gameType, &smallBlind, &bigBlind, &maxPlayers, &minBuyIn, &maxBuyIn, &completedAt, &totalPlayers, &participated, &totalHands)
+
+		tableData := map[string]interface{}{
+			"id":            id,
+			"name":          name,
+			"game_type":     gameType,
+			"small_blind":   smallBlind,
+			"big_blind":     bigBlind,
+			"max_players":   maxPlayers,
+			"min_buy_in":    minBuyIn,
+			"max_buy_in":    maxBuyIn,
+			"total_players": totalPlayers,
+			"participated":  participated == 1,
+			"total_hands":   totalHands,
+		}
+
+		if completedAt.Valid {
+			tableData["completed_at"] = completedAt.Time
+		}
+
+		tables = append(tables, tableData)
 	}
 
 	respondJSON(w, http.StatusOK, tables)
@@ -344,9 +446,9 @@ func handleJoinMatchmaking(w http.ResponseWriter, r *http.Request) {
 
 	// Add to database queue
 	_, err := database.Exec(`
-		INSERT INTO matchmaking_queue (user_id, game_type, status, min_buy_in, max_buy_in)
-		VALUES (?, 'cash', 'waiting', ?, ?)
-	`, userID, preset.MinBuyIn, preset.MaxBuyIn)
+		INSERT INTO matchmaking_queue (user_id, game_type, queue_type, status, min_buy_in, max_buy_in)
+		VALUES (?, 'cash', ?, 'waiting', ?, ?)
+	`, userID, req.GameMode, preset.MinBuyIn, preset.MaxBuyIn)
 
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to join matchmaking")
@@ -569,6 +671,20 @@ func createEngineTable(tableID, gameType string, smallBlind, bigBlind, maxPlayer
 
 	onTimeout := func(playerID string) {
 		log.Printf("Player %s timed out", playerID)
+
+		bridge.mu.RLock()
+		table, exists := bridge.tables[tableID]
+		bridge.mu.RUnlock()
+
+		if exists {
+			err := table.HandleTimeout(playerID)
+			if err != nil {
+				log.Printf("Error handling timeout for player %s: %v", playerID, err)
+			} else {
+				log.Printf("Player %s auto-folded due to timeout", playerID)
+				broadcastTableState(tableID)
+			}
+		}
 	}
 
 	onEvent := func(event pokerModels.Event) {
@@ -636,11 +752,100 @@ func checkAndStartGame(tableID string) {
 	}
 }
 
+func createHandRecord(tableID string, event pokerModels.Event) {
+	data, ok := event.Data.(map[string]interface{})
+	if !ok {
+		log.Printf("Invalid handStart event data for table %s", tableID)
+		return
+	}
+
+	handNumber, _ := data["handNumber"].(int)
+	dealerPos, _ := data["dealerPosition"].(int)
+	sbPos, _ := data["smallBlindPosition"].(int)
+	bbPos, _ := data["bigBlindPosition"].(int)
+
+	// Insert hand record
+	result, err := database.Exec(`
+		INSERT INTO hands (table_id, hand_number, dealer_position, small_blind_position, 
+			big_blind_position, community_cards, pot_amount, winners)
+		VALUES (?, ?, ?, ?, ?, '[]', 0, '[]')
+	`, tableID, handNumber, dealerPos, sbPos, bbPos)
+
+	if err != nil {
+		log.Printf("Failed to create hand record: %v", err)
+		return
+	}
+
+	handID, _ := result.LastInsertId()
+	
+	// Store current hand ID for tracking actions
+	bridge.mu.Lock()
+	bridge.currentHandIDs[tableID] = handID
+	bridge.mu.Unlock()
+	
+	log.Printf("Created hand record %d for table %s (hand #%d)", handID, tableID, handNumber)
+}
+
+func updateHandRecord(tableID string, event pokerModels.Event) {
+	bridge.mu.RLock()
+	handID, exists := bridge.currentHandIDs[tableID]
+	table, tableExists := bridge.tables[tableID]
+	bridge.mu.RUnlock()
+
+	if !exists || handID == 0 {
+		log.Printf("No hand ID found for table %s to update", tableID)
+		return
+	}
+
+	if !tableExists || table == nil {
+		log.Printf("Table %s not found for updating hand data", tableID)
+		return
+	}
+
+	state := table.GetState()
+	if state.CurrentHand == nil {
+		log.Printf("No current hand data to update for table %s", tableID)
+		return
+	}
+
+	hand := state.CurrentHand
+
+	// Convert community cards to JSON
+	communityCardsJSON, _ := json.Marshal(hand.CommunityCards)
+
+	// Convert winners to JSON
+	winnersJSON, _ := json.Marshal(state.Winners)
+
+	// Calculate total pot
+	pot := hand.Pot.Main + sumSidePots(hand.Pot.Side)
+
+	// Update hand record with final data
+	_, err := database.Exec(`
+		UPDATE hands 
+		SET community_cards = ?, pot_amount = ?, winners = ?, completed_at = NOW()
+		WHERE id = ?
+	`, string(communityCardsJSON), pot, string(winnersJSON), handID)
+
+	if err != nil {
+		log.Printf("Failed to update hand data: %v", err)
+		return
+	}
+
+	log.Printf("Updated hand record %d for table %s with final results", handID, tableID)
+}
+
 func handleEngineEvent(tableID string, event pokerModels.Event) {
 	log.Printf("Engine event on table %s: %s", tableID, event.Event)
 
 	switch event.Event {
+	case "handStart":
+		// Create hand record at the start of the hand
+		createHandRecord(tableID, event)
+		broadcastTableState(tableID)
+
 	case "handComplete":
+		// Update hand data with final results
+		updateHandRecord(tableID, event)
 		broadcastTableState(tableID)
 
 		go func() {
@@ -673,6 +878,13 @@ func handleEngineEvent(tableID string, event pokerModels.Event) {
 	case "gameComplete":
 		// Game is over - only one player left
 		log.Printf("Game complete on table %s", tableID)
+		
+		// Mark table as completed in database
+		_, err := database.Exec("UPDATE tables SET status = 'completed', completed_at = NOW() WHERE id = ?", tableID)
+		if err != nil {
+			log.Printf("Failed to update table status: %v", err)
+		}
+		
 		broadcastTableState(tableID)
 
 		// Send game complete message after a short delay to ensure hand winner is shown first
@@ -920,6 +1132,13 @@ func processGameAction(userID, tableID, action string, amount int) {
 		return
 	}
 
+	// Get current betting round before processing action
+	state := table.GetState()
+	var bettingRound string
+	if state.CurrentHand != nil {
+		bettingRound = string(state.CurrentHand.BettingRound)
+	}
+
 	var playerAction pokerModels.PlayerAction
 	switch action {
 	case "fold":
@@ -941,6 +1160,26 @@ func processGameAction(userID, tableID, action string, amount int) {
 	if err != nil {
 		log.Printf("Action error: %v", err)
 	} else {
+		// Save action to database if we have a current hand ID
+		bridge.mu.RLock()
+		handID, hasHandID := bridge.currentHandIDs[tableID]
+		bridge.mu.RUnlock()
+
+		if hasHandID && handID > 0 {
+			_, err := database.Exec(`
+				INSERT INTO hand_actions (hand_id, user_id, action_type, amount, betting_round)
+				VALUES (?, ?, ?, ?, ?)
+			`, handID, userID, action, amount, bettingRound)
+
+			if err != nil {
+				log.Printf("Failed to save hand action: %v", err)
+			} else {
+				log.Printf("Saved action %s by %s for hand %d", action, userID, handID)
+			}
+		} else {
+			log.Printf("No hand ID found for table %s to save action", tableID)
+		}
+
 		broadcastTableState(tableID)
 	}
 }

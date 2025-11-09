@@ -38,35 +38,44 @@ const ActionTimer: React.FC<ActionTimerProps> = ({ deadline, totalTime = 30 }) =
   }, [deadline, totalTime]);
 
   const getColor = () => {
-    if (percentage > 50) return 'success';
-    if (percentage > 25) return 'warning';
-    return 'error';
+    if (percentage > 50) return '#10b981';
+    if (percentage > 25) return '#fbbf24';
+    return '#ef4444';
   };
 
   return (
     <Box sx={{ width: '100%' }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-        <Typography variant="caption" color="text.secondary">
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
+        <Typography variant="caption" sx={{ color: 'rgba(156, 163, 175, 0.7)', fontSize: '10px', fontWeight: 600 }}>
           Time
         </Typography>
         <Typography
           variant="caption"
           fontWeight="bold"
-          color={getColor() === 'error' ? 'error.main' : 'text.primary'}
+          sx={{ color: getColor(), fontSize: '11px' }}
         >
           {timeLeft}s
         </Typography>
       </Box>
-      <LinearProgress
-        variant="determinate"
-        value={percentage}
-        color={getColor()}
+      <Box
         sx={{
-          height: 6,
-          borderRadius: 3,
-          bgcolor: 'rgba(0,0,0,0.1)',
+          width: '100%',
+          height: 4,
+          borderRadius: 2,
+          bgcolor: 'rgba(31, 41, 55, 0.5)',
+          overflow: 'hidden',
         }}
-      />
+      >
+        <Box
+          sx={{
+            width: `${percentage}%`,
+            height: '100%',
+            bgcolor: getColor(),
+            transition: 'width 0.1s linear',
+            boxShadow: `0 0 8px ${getColor()}`,
+          }}
+        />
+      </Box>
     </Box>
   );
 };

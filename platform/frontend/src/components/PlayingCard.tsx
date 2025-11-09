@@ -24,24 +24,25 @@ const PlayingCard: React.FC<PlayingCardProps> = ({ card, size = 'medium', faceDo
 
   if (faceDown) {
     return (
-      <Paper
-        elevation={3}
+      <Box
         sx={{
           width,
           height,
-          background: 'linear-gradient(135deg, #1a237e 0%, #283593 100%)',
-          border: '2px solid #3949ab',
+          background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.3) 0%, rgba(79, 70, 229, 0.3) 100%)',
+          border: '2px solid rgba(99, 102, 241, 0.5)',
           borderRadius: 1.5,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           position: 'relative',
+          backdropFilter: 'blur(10px)',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
           '&::before': {
             content: '""',
             position: 'absolute',
             width: '80%',
             height: '80%',
-            background: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,0.1) 10px, rgba(255,255,255,0.1) 20px)',
+            background: 'repeating-linear-gradient(45deg, transparent, transparent 8px, rgba(255,255,255,0.1) 8px, rgba(255,255,255,0.1) 16px)',
             borderRadius: 1,
           },
         }}
@@ -50,13 +51,12 @@ const PlayingCard: React.FC<PlayingCardProps> = ({ card, size = 'medium', faceDo
   }
 
   return (
-    <Paper
-      elevation={3}
+    <Box
       sx={{
         width,
         height,
-        bgcolor: 'white',
-        border: '2px solid #ddd',
+        bgcolor: '#ffffff',
+        border: '2px solid rgba(0, 0, 0, 0.1)',
         borderRadius: 1.5,
         display: 'flex',
         flexDirection: 'column',
@@ -64,14 +64,27 @@ const PlayingCard: React.FC<PlayingCardProps> = ({ card, size = 'medium', faceDo
         justifyContent: 'space-between',
         p: 0.5,
         position: 'relative',
+        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3), 0 2px 4px rgba(0, 0, 0, 0.2)',
+        '&::before': {
+          content: '""',
+          position: 'absolute',
+          top: 2,
+          left: 2,
+          right: 2,
+          bottom: 2,
+          border: '1px solid rgba(0, 0, 0, 0.05)',
+          borderRadius: 1,
+          pointerEvents: 'none',
+        },
       }}
     >
       <Box
         sx={{
           fontSize,
-          fontWeight: 'bold',
+          fontWeight: 900,
           color: getSuitColor(parsedCard.suit),
           lineHeight: 1,
+          textShadow: '0 1px 2px rgba(0, 0, 0, 0.1)',
         }}
       >
         {parsedCard.rank}
@@ -81,6 +94,7 @@ const PlayingCard: React.FC<PlayingCardProps> = ({ card, size = 'medium', faceDo
           fontSize: fontSize * 1.5,
           color: getSuitColor(parsedCard.suit),
           lineHeight: 1,
+          filter: 'drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1))',
         }}
       >
         {parsedCard.suit}
@@ -88,14 +102,15 @@ const PlayingCard: React.FC<PlayingCardProps> = ({ card, size = 'medium', faceDo
       <Box
         sx={{
           fontSize,
-          fontWeight: 'bold',
+          fontWeight: 900,
           color: getSuitColor(parsedCard.suit),
           lineHeight: 1,
+          textShadow: '0 1px 2px rgba(0, 0, 0, 0.1)',
         }}
       >
         {parsedCard.rank}
       </Box>
-    </Paper>
+    </Box>
   );
 };
 

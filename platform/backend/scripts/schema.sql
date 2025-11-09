@@ -109,6 +109,7 @@ CREATE TABLE matchmaking_queue (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     user_id VARCHAR(36) NOT NULL,
     game_type ENUM('cash', 'tournament') NOT NULL,
+    queue_type VARCHAR(50) NOT NULL,
     min_buy_in INT,
     max_buy_in INT,
     status ENUM('waiting', 'matched', 'cancelled') DEFAULT 'waiting',
@@ -116,7 +117,8 @@ CREATE TABLE matchmaking_queue (
     matched_at TIMESTAMP NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     INDEX idx_status (status),
-    INDEX idx_user (user_id)
+    INDEX idx_user (user_id),
+    INDEX idx_queue_type (queue_type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE sessions (
