@@ -295,7 +295,18 @@ func (g *Game) completeHand() {
 		g.potCalculator = NewPotCalculator()
 	}
 
-	g.table.CurrentHand.Pot = g.potCalculator.CalculatePots(g.table.Players)
+	hasBets := false
+	for _, p := range g.table.Players {
+		if p != nil && p.Bet > 0 {
+			hasBets = true
+			break
+		}
+	}
+
+	if hasBets {
+		g.table.CurrentHand.Pot = g.potCalculator.CalculatePots(g.table.Players)
+	}
+
 	g.table.Winners = DistributeWinnings(g.table.CurrentHand.Pot, g.table.Players, g.table.CurrentHand.CommunityCards)
 
 	for _, winner := range g.table.Winners {
