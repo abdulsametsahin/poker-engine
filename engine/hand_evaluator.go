@@ -224,15 +224,19 @@ func findStraight(cards []models.Card) []models.Card {
 
 	// Check for wheel (A-2-3-4-5) - Ace acts as low card
 	if len(values) >= 5 && values[0] == 14 {
-		wheel := []models.Card{uniqueRanks[5]}
-		for _, val := range []int{4, 3, 2} {
+		// Check if we have 5, 4, 3, 2
+		hasWheel := true
+		wheel := []models.Card{}
+		for _, val := range []int{5, 4, 3, 2} {
 			if card, exists := uniqueRanks[val]; exists {
 				wheel = append(wheel, card)
 			} else {
-				return []models.Card{}
+				hasWheel = false
+				break
 			}
 		}
-		if len(wheel) == 4 {
+		if hasWheel && len(wheel) == 4 {
+			// Add the Ace at the end (acts as low card)
 			wheel = append(wheel, uniqueRanks[14])
 			return wheel
 		}
@@ -258,6 +262,18 @@ func checkThreeOfAKind(cards []models.Card) HandEvaluation {
 			sort.Slice(kickers, func(i, j int) bool {
 				return kickers[i].Value() > kickers[j].Value()
 			})
+
+			// Safety check for kickers
+			if len(kickers) < 2 {
+				// Should not happen with 7 cards, but handle gracefully
+				bestCards := rankCards[:3]
+				bestCards = append(bestCards, kickers...)
+				value := 40000 + rankCards[0].Value()*100
+				if len(kickers) > 0 {
+					value += kickers[0].Value() * 10
+				}
+				return HandEvaluation{Rank: ThreeOfAKind, Value: value, Cards: bestCards}
+			}
 
 			bestCards := append(rankCards[:3], kickers[:2]...)
 			value := 40000 + rankCards[0].Value()*100 + kickers[0].Value()*10 + kickers[1].Value()
@@ -318,6 +334,20 @@ func checkOnePair(cards []models.Card) HandEvaluation {
 			sort.Slice(kickers, func(i, j int) bool {
 				return kickers[i].Value() > kickers[j].Value()
 			})
+
+			// Safety check for kickers
+			if len(kickers) < 3 {
+				// Should not happen with 7 cards, but handle gracefully
+				bestCards := rankCards[:2]
+				bestCards = append(bestCards, kickers...)
+				value := 20000 + rankCards[0].Value()*1000
+				for i, k := range kickers {
+					if i < 3 {
+						value += k.Value() * (100 / (i + 1))
+					}
+				}
+				return HandEvaluation{Rank: OnePair, Value: value, Cards: bestCards}
+			}
 
 			bestCards := append(rankCards[:2], kickers[:3]...)
 			value := 20000 + rankCards[0].Value()*1000 + kickers[0].Value()*100 + kickers[1].Value()*10 + kickers[2].Value()

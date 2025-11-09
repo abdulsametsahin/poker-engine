@@ -49,7 +49,7 @@ func (h *CommandHandler) Handle(cmd models.Command) models.Response {
 func (h *CommandHandler) handleCreateTable(data map[string]interface{}) models.Response {
 	tableID := getString(data, "tableId")
 	gameTypeStr := getString(data, "gameType")
-	
+
 	var gameType models.GameType
 	if gameTypeStr == "tournament" {
 		gameType = models.GameTypeTournament
@@ -66,6 +66,34 @@ func (h *CommandHandler) handleCreateTable(data map[string]interface{}) models.R
 		StartingChips:         getInt(data, "startingChips"),
 		BlindIncreaseInterval: getInt(data, "blindIncreaseInterval"),
 		ActionTimeout:         getInt(data, "actionTimeout"),
+	}
+
+	// Validate table config
+	if config.MaxPlayers <= 0 {
+		return models.Response{Success: false, Error: "maxPlayers must be positive"}
+	}
+	if config.MaxPlayers > 10 {
+		return models.Response{Success: false, Error: "maxPlayers cannot exceed 10"}
+	}
+	if config.MaxPlayers < 2 {
+		return models.Response{Success: false, Error: "maxPlayers must be at least 2"}
+	}
+	if config.SmallBlind <= 0 {
+		return models.Response{Success: false, Error: "smallBlind must be positive"}
+	}
+	if config.BigBlind <= 0 {
+		return models.Response{Success: false, Error: "bigBlind must be positive"}
+	}
+	if config.BigBlind <= config.SmallBlind {
+		return models.Response{Success: false, Error: "bigBlind must be greater than smallBlind"}
+	}
+	if gameType == models.GameTypeCash {
+		if config.MinBuyIn > 0 && config.MaxBuyIn > 0 && config.MaxBuyIn < config.MinBuyIn {
+			return models.Response{Success: false, Error: "maxBuyIn must be greater than or equal to minBuyIn"}
+		}
+	}
+	if gameType == models.GameTypeTournament && config.StartingChips <= 0 {
+		return models.Response{Success: false, Error: "startingChips must be positive for tournaments"}
 	}
 
 	err := h.tableManager.CreateTable(tableID, gameType, config)

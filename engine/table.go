@@ -13,6 +13,11 @@ type Table struct {
 }
 
 func NewTable(tableID string, gameType models.GameType, config models.TableConfig, onTimeout func(string), onEvent func(models.Event)) *Table {
+	// Validate ActionTimeout
+	if config.ActionTimeout < 0 {
+		config.ActionTimeout = 0 // Disable timeout
+	}
+
 	table := &models.Table{
 		TableID:   tableID,
 		GameType:  gameType,
@@ -41,9 +46,27 @@ func (t *Table) AddPlayer(playerID, playerName string, seatNumber int, buyIn int
 		return fmt.Errorf("seat already occupied")
 	}
 
+	// Check if player is already seated at this table
+	for i, p := range t.model.Players {
+		if p != nil && p.PlayerID == playerID {
+			return fmt.Errorf("player %s is already seated at position %d", playerID, i)
+		}
+	}
+
 	chips := buyIn
 	if t.model.GameType == models.GameTypeTournament {
 		chips = t.model.Config.StartingChips
+	} else {
+		// Cash game - validate buy-in amount
+		if t.model.Config.MinBuyIn > 0 && buyIn < t.model.Config.MinBuyIn {
+			return fmt.Errorf("buy-in %d is below minimum %d", buyIn, t.model.Config.MinBuyIn)
+		}
+		if t.model.Config.MaxBuyIn > 0 && buyIn > t.model.Config.MaxBuyIn {
+			return fmt.Errorf("buy-in %d exceeds maximum %d", buyIn, t.model.Config.MaxBuyIn)
+		}
+		if buyIn <= 0 {
+			return fmt.Errorf("buy-in must be positive")
+		}
 	}
 
 	player := models.NewPlayer(playerID, playerName, seatNumber, chips)
@@ -52,6 +75,24 @@ func (t *Table) AddPlayer(playerID, playerName string, seatNumber int, buyIn int
 }
 
 func (t *Table) RemovePlayer(playerID string) error {
+	// Check if hand is in progress
+	if t.model.Status == models.StatusPlaying {
+		// Find the player
+		for _, player := range t.model.Players {
+			if player != nil && player.PlayerID == playerID {
+				// If player hasn't folded, fold them first
+				if player.Status != models.StatusFolded {
+					player.Status = models.StatusFolded
+				}
+				// Mark for removal after hand completes
+				player.Status = models.StatusSittingOut
+				return nil
+			}
+		}
+		return fmt.Errorf("player not found")
+	}
+
+	// Hand not in progress - safe to remove immediately
 	for i, player := range t.model.Players {
 		if player != nil && player.PlayerID == playerID {
 			t.model.Players[i] = nil
@@ -64,6 +105,11 @@ func (t *Table) RemovePlayer(playerID string) error {
 func (t *Table) SitOut(playerID string) error {
 	for _, player := range t.model.Players {
 		if player != nil && player.PlayerID == playerID {
+			// If hand in progress and player is active, fold them first
+			if t.model.Status == models.StatusPlaying && player.Status == models.StatusActive {
+				player.Status = models.StatusFolded
+				player.LastAction = models.ActionFold
+			}
 			player.Status = models.StatusSittingOut
 			return nil
 		}
@@ -87,8 +133,19 @@ func (t *Table) AddChips(playerID string, amount int) error {
 	if t.model.GameType == models.GameTypeTournament {
 		return fmt.Errorf("cannot add chips in tournament mode")
 	}
+	if amount <= 0 {
+		return fmt.Errorf("amount must be positive")
+	}
 	for _, player := range t.model.Players {
 		if player != nil && player.PlayerID == playerID {
+			// Check max buy-in if configured
+			if t.model.Config.MaxBuyIn > 0 {
+				newTotal := player.Chips + amount
+				if newTotal > t.model.Config.MaxBuyIn {
+					return fmt.Errorf("adding %d chips would exceed max buy-in of %d (current: %d)",
+						amount, t.model.Config.MaxBuyIn, player.Chips)
+				}
+			}
 			player.AddChips(amount)
 			return nil
 		}
