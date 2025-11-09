@@ -152,8 +152,20 @@ export const GameView: React.FC = () => {
 
   return (
     <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', bgcolor: 'grey.100' }}>
+      {/* Game Complete Modal */}
+      {gameComplete && (
+        <GameCompleteDisplay
+          winner={gameComplete.winner}
+          winnerName={gameComplete.winnerName}
+          finalChips={gameComplete.finalChips}
+          totalPlayers={gameComplete.totalPlayers}
+          message={gameComplete.message}
+          currentUserId={currentUserId}
+        />
+      )}
+
       {/* Winner Display Modal */}
-      {showWinners && tableState?.winners && (
+      {showWinners && tableState?.winners && !gameComplete && (
         <WinnerDisplay winners={tableState.winners} onClose={handleCloseWinners} />
       )}
 
