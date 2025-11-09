@@ -243,7 +243,19 @@ func (g *Game) advanceToNextRound() {
 		g.potCalculator = NewPotCalculator()
 	}
 
-	g.table.CurrentHand.Pot = g.potCalculator.CalculatePots(g.table.Players)
+	// Only recalculate pot if there were bets in this round
+	hasBets := false
+	for _, p := range g.table.Players {
+		if p != nil && p.Bet > 0 {
+			hasBets = true
+			break
+		}
+	}
+
+	if hasBets {
+		g.table.CurrentHand.Pot = g.potCalculator.CalculatePots(g.table.Players)
+	}
+
 	resetPlayersForNewRound(g.table.Players)
 
 	g.table.CurrentHand.CurrentBet = 0
