@@ -9,10 +9,11 @@ interface ActionTimerProps {
 const ActionTimer: React.FC<ActionTimerProps> = ({ deadline, totalTime = 30 }) => {
   const [timeLeft, setTimeLeft] = useState(0);
   const [percentage, setPercentage] = useState(100);
-  const deadlineRef = useRef<number>(0);
-  const totalTimeRef = useRef<number>(totalTime);
+  const deadlineTimeRef = useRef<number>(0);
+  const startTimeRef = useRef<number>(0);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Only update deadline reference when it actually changes
+  // Parse and update deadline when it changes
   useEffect(() => {
     let deadlineTime: number;
 
@@ -24,31 +25,56 @@ const ActionTimer: React.FC<ActionTimerProps> = ({ deadline, totalTime = 30 }) =
       deadlineTime = deadline;
     }
 
-    // Only update if deadline actually changed (more than 100ms difference to account for small variations)
-    if (Math.abs(deadlineTime - deadlineRef.current) > 100) {
-      deadlineRef.current = deadlineTime;
-      totalTimeRef.current = totalTime;
+    // Only update if deadline actually changed (more than 100ms difference)
+    if (Math.abs(deadlineTime - deadlineTimeRef.current) > 100) {
+      deadlineTimeRef.current = deadlineTime;
+      // Calculate the original start time
+      startTimeRef.current = deadlineTime - (totalTime * 1000);
     }
   }, [deadline, totalTime]);
 
+  // Timer effect
   useEffect(() => {
     const updateTimer = () => {
-      if (deadlineRef.current === 0) return;
+      if (deadlineTimeRef.current === 0) return;
 
       const now = Date.now();
-      const remaining = Math.max(0, deadlineRef.current - now);
+      const remaining = Math.max(0, deadlineTimeRef.current - now);
       const remainingSeconds = Math.ceil(remaining / 1000);
-      const pct = Math.min(100, (remaining / (totalTimeRef.current * 1000)) * 100);
+      
+      // Calculate percentage based on original total time
+      const totalDuration = deadlineTimeRef.current - startTimeRef.current;
+      const elapsed = now - startTimeRef.current;
+      const pct = Math.max(0, Math.min(100, ((totalDuration - elapsed) / totalDuration) * 100));
 
       setTimeLeft(remainingSeconds);
       setPercentage(pct);
+
+      // Stop timer when time runs out
+      if (remaining <= 0 && intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
     };
 
+    // Initial update
     updateTimer();
-    const interval = setInterval(updateTimer, 100);
+    
+    // Clear existing interval
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
 
-    return () => clearInterval(interval);
-  }, []); // Empty dependency array - timer runs independently
+    // Start new interval
+    intervalRef.current = setInterval(updateTimer, 100);
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [deadline]); // Re-run when deadline changes
 
   const getColor = () => {
     if (percentage > 50) return '#10b981';
