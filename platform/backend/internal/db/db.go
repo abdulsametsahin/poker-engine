@@ -1,17 +1,23 @@
 package db
 
 import (
-	"database/sql"
 	"fmt"
+	"log"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	"poker-platform/backend/internal/models"
+
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
+// DB wraps the GORM database connection
 type DB struct {
-	*sql.DB
+	*gorm.DB
 }
 
+// Config holds database connection configuration
 type Config struct {
 	Host     string
 	Port     string
@@ -20,22 +26,73 @@ type Config struct {
 	DBName   string
 }
 
+// New creates a new database connection with GORM and runs auto migrations
 func New(cfg Config) (*DB, error) {
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true",
+	// Build DSN (Data Source Name)
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
 		cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.DBName)
 
-	db, err := sql.Open("mysql", dsn)
+	// Configure GORM
+	gormConfig := &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Info),
+		NowFunc: func() time.Time {
+			return time.Now().UTC()
+		},
+	}
+
+	// Open database connection
+	db, err := gorm.Open(mysql.Open(dsn), gormConfig)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(5 * time.Minute)
-
-	if err = db.Ping(); err != nil {
-		return nil, err
+	// Get underlying SQL DB to configure connection pool
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get underlying sql.DB: %w", err)
 	}
+
+	// Set connection pool settings
+	sqlDB.SetMaxOpenConns(25)
+	sqlDB.SetMaxIdleConns(5)
+	sqlDB.SetConnMaxLifetime(5 * time.Minute)
+
+	// Test connection
+	if err = sqlDB.Ping(); err != nil {
+		return nil, fmt.Errorf("failed to ping database: %w", err)
+	}
+
+	// Run auto migrations
+	if err := runMigrations(db); err != nil {
+		return nil, fmt.Errorf("failed to run migrations: %w", err)
+	}
+
+	log.Println("Database connected and migrations completed successfully")
 
 	return &DB{db}, nil
+}
+
+// runMigrations runs auto migrations for all models
+func runMigrations(db *gorm.DB) error {
+	log.Println("Running auto migrations...")
+
+	// Migrate all models
+	err := db.AutoMigrate(
+		&models.User{},
+		&models.Table{},
+		&models.TableSeat{},
+		&models.Tournament{},
+		&models.TournamentPlayer{},
+		&models.Hand{},
+		&models.HandAction{},
+		&models.Session{},
+		&models.MatchmakingEntry{},
+	)
+
+	if err != nil {
+		return fmt.Errorf("auto migration failed: %w", err)
+	}
+
+	log.Println("Auto migrations completed successfully")
+	return nil
 }
