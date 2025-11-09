@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import {
   Box,
   Container,
-  Grid,
   Card,
   CardContent,
   Button,
@@ -115,49 +114,57 @@ export const Lobby: React.FC = () => {
             Available Tables
           </Typography>
 
-          <Grid container spacing={3}>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: {
+                xs: '1fr',
+                sm: 'repeat(2, 1fr)',
+                md: 'repeat(3, 1fr)',
+              },
+              gap: 3,
+            }}
+          >
             {tables.map((table) => (
-              <Grid item xs={12} sm={6} md={4} key={table.id}>
-                <Card sx={{ height: '100%' }}>
-                  <CardContent>
-                    <Stack spacing={2}>
-                      <Box>
-                        <Typography variant="h6" gutterBottom>
-                          {table.name}
-                        </Typography>
-                        <Chip
-                          label={table.status.toUpperCase()}
-                          size="small"
-                          color={table.status === 'waiting' ? 'success' : 'warning'}
-                        />
-                      </Box>
+              <Card key={table.id} sx={{ height: '100%' }}>
+                <CardContent>
+                  <Stack spacing={2}>
+                    <Box>
+                      <Typography variant="h6" gutterBottom>
+                        {table.name}
+                      </Typography>
+                      <Chip
+                        label={table.status.toUpperCase()}
+                        size="small"
+                        color={table.status === 'waiting' ? 'success' : 'warning'}
+                      />
+                    </Box>
 
-                      <Box>
-                        <Typography variant="body2" color="text.secondary">
-                          Blinds: ${table.small_blind}/${table.big_blind}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Players: {table.current_players}/{table.max_players}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Buy-in: ${table.min_buy_in} - ${table.max_buy_in}
-                        </Typography>
-                      </Box>
+                    <Box>
+                      <Typography variant="body2" color="text.secondary">
+                        Blinds: ${table.small_blind}/${table.big_blind}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        Players: {table.current_players}/{table.max_players}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        Buy-in: ${table.min_buy_in} - ${table.max_buy_in}
+                      </Typography>
+                    </Box>
 
-                      <Button
-                        variant="contained"
-                        fullWidth
-                        onClick={() => handleJoinTable(table.id, table.min_buy_in)}
-                        disabled={loading || table.current_players >= table.max_players}
-                      >
-                        {table.current_players >= table.max_players ? 'Full' : 'Join Table'}
-                      </Button>
-                    </Stack>
-                  </CardContent>
-                </Card>
-              </Grid>
+                    <Button
+                      variant="contained"
+                      fullWidth
+                      onClick={() => handleJoinTable(table.id, table.min_buy_in)}
+                      disabled={loading || table.current_players >= table.max_players}
+                    >
+                      {table.current_players >= table.max_players ? 'Full' : 'Join Table'}
+                    </Button>
+                  </Stack>
+                </CardContent>
+              </Card>
             ))}
-          </Grid>
+          </Box>
 
           {tables.length === 0 && (
             <Box sx={{ textAlign: 'center', py: 4 }}>
