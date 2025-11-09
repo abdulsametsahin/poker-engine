@@ -258,48 +258,8 @@ export const Lobby: React.FC = () => {
   return (
     <AppLayout>
       <Box sx={{ flexGrow: 1, pb: 6 }}>
-        {/* Hero Section */}
-        <Box
-          sx={{
-            background: `linear-gradient(135deg, ${COLORS.primary.dark} 0%, ${COLORS.background.primary} 100%)`,
-            borderBottom: `1px solid ${COLORS.border.main}`,
-            position: 'relative',
-            overflow: 'hidden',
-          }}
-        >
-          <Box
-            sx={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              opacity: 0.1,
-              background: `radial-gradient(circle at 30% 50%, ${COLORS.secondary.main} 0%, transparent 50%)`,
-            }}
-          />
-          <Container maxWidth="lg" sx={{ py: 6, position: 'relative', zIndex: 1 }}>
-            <Stack spacing={2} alignItems="center" textAlign="center">
-              <Typography
-                variant="h3"
-                sx={{
-                  fontWeight: 700,
-                  background: `linear-gradient(135deg, ${COLORS.primary.light} 0%, ${COLORS.secondary.light} 100%)`,
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                }}
-              >
-                Welcome back, {user?.username}
-              </Typography>
-              <Typography variant="h6" color="text.secondary" sx={{ maxWidth: 600 }}>
-                Choose your game mode and start playing Texas Hold'em poker
-              </Typography>
-            </Stack>
-          </Container>
-        </Box>
-
         {/* Game Modes Section */}
-        <Container maxWidth="lg" sx={{ mt: -4 }}>
+        <Container maxWidth="lg" sx={{ mt: 4 }}>
           <Card variant="elevated" sx={{ mb: 6, p: 4 }}>
             <Typography variant="h5" sx={{ mb: 3, fontWeight: 700 }}>
               <PlayArrow sx={{ mr: 1, verticalAlign: 'middle' }} />
