@@ -106,19 +106,30 @@ func (d *Deck) Shuffle() {
 	})
 }
 
-func (d *Deck) Deal() Card {
+func (d *Deck) Deal() (Card, error) {
 	if len(d.cards) == 0 {
-		panic("deck is empty")
+		return Card{}, fmt.Errorf("deck is empty - no more cards to deal")
 	}
 	card := d.cards[0]
 	d.cards = d.cards[1:]
-	return card
+	return card, nil
 }
 
-func (d *Deck) DealMultiple(n int) []Card {
+func (d *Deck) DealMultiple(n int) ([]Card, error) {
+	if len(d.cards) < n {
+		return nil, fmt.Errorf("not enough cards in deck: requested %d, available %d", n, len(d.cards))
+	}
 	cards := make([]Card, n)
 	for i := 0; i < n; i++ {
-		cards[i] = d.Deal()
+		card, err := d.Deal()
+		if err != nil {
+			return nil, err
+		}
+		cards[i] = card
 	}
-	return cards
+	return cards, nil
+}
+
+func (d *Deck) CardsRemaining() int {
+	return len(d.cards)
 }

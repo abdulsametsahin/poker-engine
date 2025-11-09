@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"poker-engine/models"
+	"sync"
 	"time"
 )
 
@@ -12,6 +13,7 @@ type Game struct {
 	actionTimer   *time.Timer
 	onTimeout     func(string)
 	onEvent       func(models.Event)
+	mu            sync.Mutex
 }
 
 func NewGame(table *models.Table, onTimeout func(string), onEvent func(models.Event)) *Game {
@@ -24,6 +26,9 @@ func NewGame(table *models.Table, onTimeout func(string), onEvent func(models.Ev
 }
 
 func (g *Game) StartNewHand() error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
 	// Clear previous hand data
 	g.table.Winners = nil
 	g.table.Status = models.StatusPlaying
@@ -59,9 +64,11 @@ func (g *Game) StartNewHand() error {
 
 	g.table.Deck = models.NewDeck()
 
-	dealerPos := 0
-	sbPos := 1
-	bbPos := 2
+	// Rotate dealer button (or find first dealer if new game)
+	dealerPos := g.findNextDealer()
+
+	// Calculate blind positions based on number of active players
+	sbPos, bbPos := g.calculateBlindPositions(dealerPos, activePlayers)
 
 	// Reset all players to active status
 	for _, p := range g.table.Players {
@@ -77,11 +84,13 @@ func (g *Game) StartNewHand() error {
 		}
 	}
 
-	// Post blinds and check if players can afford them
-	if len(g.table.Players) > 0 && g.table.Players[dealerPos] != nil {
+	// Set dealer button
+	if g.table.Players[dealerPos] != nil {
 		g.table.Players[dealerPos].IsDealer = true
 	}
-	if len(g.table.Players) > 1 && g.table.Players[sbPos] != nil {
+
+	// Post small blind
+	if g.table.Players[sbPos] != nil {
 		sbPlayer := g.table.Players[sbPos]
 		sbPlayer.IsSmallBlind = true
 		sbAmount := g.table.Config.SmallBlind
@@ -91,8 +100,11 @@ func (g *Game) StartNewHand() error {
 		}
 		sbPlayer.Bet = sbAmount
 		sbPlayer.Chips -= sbAmount
+		sbPlayer.HasActedThisRound = true // Blinds count as having acted
 	}
-	if len(g.table.Players) > 2 && g.table.Players[bbPos] != nil {
+
+	// Post big blind
+	if g.table.Players[bbPos] != nil {
 		bbPlayer := g.table.Players[bbPos]
 		bbPlayer.IsBigBlind = true
 		bbAmount := g.table.Config.BigBlind
@@ -102,10 +114,15 @@ func (g *Game) StartNewHand() error {
 		}
 		bbPlayer.Bet = bbAmount
 		bbPlayer.Chips -= bbAmount
+		// Big blind gets option to raise, so don't mark as acted yet
+		bbPlayer.HasActedThisRound = false
 	}
 
+	// Increment hand number
+	handNumber := g.table.CurrentHand.HandNumber + 1
+
 	g.table.CurrentHand = &models.CurrentHand{
-		HandNumber:         1,
+		HandNumber:         handNumber,
 		DealerPosition:     dealerPos,
 		SmallBlindPosition: sbPos,
 		BigBlindPosition:   bbPos,
@@ -119,7 +136,12 @@ func (g *Game) StartNewHand() error {
 
 	for _, player := range g.table.Players {
 		if player != nil && player.Status == models.StatusActive {
-			player.Cards = g.table.Deck.DealMultiple(2)
+			cards, err := g.table.Deck.DealMultiple(2)
+			if err != nil {
+				g.table.Status = models.StatusWaiting
+				return fmt.Errorf("failed to deal cards: %v", err)
+			}
+			player.Cards = cards
 		}
 	}
 
@@ -129,6 +151,9 @@ func (g *Game) StartNewHand() error {
 }
 
 func (g *Game) ProcessAction(playerID string, action models.PlayerAction, amount int) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
 	// Check if game is still active
 	if g.table.Status != models.StatusPlaying {
 		return fmt.Errorf("hand is not in progress")
@@ -151,12 +176,14 @@ func (g *Game) ProcessAction(playerID string, action models.PlayerAction, amount
 	case models.ActionFold:
 		player.Status = models.StatusFolded
 		player.LastAction = models.ActionFold
+		player.LastActionAmount = 0
 	case models.ActionCheck:
 		// Can only check if player's bet matches current bet (no one has raised)
 		if player.Bet < g.table.CurrentHand.CurrentBet {
 			return fmt.Errorf("cannot check - must call, raise, or fold")
 		}
 		player.LastAction = models.ActionCheck
+		player.LastActionAmount = 0
 	case models.ActionCall:
 		callAmount := g.table.CurrentHand.CurrentBet - player.Bet
 		if callAmount > player.Chips {
@@ -165,20 +192,34 @@ func (g *Game) ProcessAction(playerID string, action models.PlayerAction, amount
 			player.PlaceBet(callAmount)
 			player.Status = models.StatusAllIn
 			player.LastAction = models.ActionAllIn
+			player.LastActionAmount = callAmount
 		} else {
 			player.PlaceBet(callAmount)
 			player.LastAction = models.ActionCall
+			player.LastActionAmount = callAmount
 		}
 	case models.ActionRaise:
+		// Validate raise amount
+		if amount < 0 {
+			return fmt.Errorf("raise amount cannot be negative")
+		}
+
 		// Calculate the minimum valid raise
 		minTotalBet := g.table.CurrentHand.CurrentBet + g.table.CurrentHand.MinRaise
 
-		if amount >= player.Chips {
+		// Calculate how much player needs to add to their current bet
+		amountToAdd := amount - player.Bet
+		if amountToAdd < 0 {
+			return fmt.Errorf("raise amount %d is less than current bet %d", amount, player.Bet)
+		}
+
+		if amountToAdd >= player.Chips {
 			// Player wants to raise but doesn't have enough chips - go all-in
 			raiseAmount := player.Chips
 			player.PlaceBet(raiseAmount)
 			player.Status = models.StatusAllIn
 			player.LastAction = models.ActionAllIn
+			player.LastActionAmount = raiseAmount
 
 			// Only reopen betting if all-in is a full raise
 			if player.Bet >= minTotalBet {
@@ -201,8 +242,9 @@ func (g *Game) ProcessAction(playerID string, action models.PlayerAction, amount
 					minTotalBet, g.table.CurrentHand.CurrentBet, g.table.CurrentHand.MinRaise)
 			}
 
-			player.PlaceBet(amount)
+			player.PlaceBet(amountToAdd)
 			player.LastAction = models.ActionRaise
+			player.LastActionAmount = amountToAdd
 
 			// Update min raise to the size of this raise
 			g.table.CurrentHand.MinRaise = player.Bet - g.table.CurrentHand.CurrentBet
@@ -217,11 +259,17 @@ func (g *Game) ProcessAction(playerID string, action models.PlayerAction, amount
 		}
 	case models.ActionAllIn:
 		// Player explicitly going all-in
+		if player.Chips <= 0 {
+			return fmt.Errorf("player has no chips to go all-in")
+		}
+
 		minTotalBet := g.table.CurrentHand.CurrentBet + g.table.CurrentHand.MinRaise
 
-		player.PlaceBet(player.Chips)
+		allInAmount := player.Chips
+		player.PlaceBet(allInAmount)
 		player.Status = models.StatusAllIn
 		player.LastAction = models.ActionAllIn
+		player.LastActionAmount = allInAmount
 
 		// Only reopen betting if all-in is at least a full raise
 		if player.Bet >= minTotalBet {
@@ -257,10 +305,12 @@ func (g *Game) advanceToNextRound() {
 		g.potCalculator = NewPotCalculator()
 	}
 
-	// Add current bets to the pot and reset bets for new round
+	// Calculate pots (main and side pots) before clearing bets
+	g.table.CurrentHand.Pot = g.potCalculator.CalculatePots(g.table.Players)
+
+	// Clear player bets for the new round
 	for _, p := range g.table.Players {
 		if p != nil {
-			g.table.CurrentHand.Pot.Main += p.Bet
 			p.Bet = 0
 			// All-in players don't need to act in future rounds
 			if p.Status != models.StatusAllIn {
@@ -295,13 +345,29 @@ func (g *Game) advanceToNextRound() {
 		for g.table.CurrentHand.BettingRound != models.RoundRiver {
 			switch g.table.CurrentHand.BettingRound {
 			case models.RoundPreflop:
-				g.table.CurrentHand.CommunityCards = g.table.Deck.DealMultiple(3)
+				cards, err := g.table.Deck.DealMultiple(3)
+				if err != nil {
+					// Deck error - complete hand with current cards
+					g.completeHand()
+					return
+				}
+				g.table.CurrentHand.CommunityCards = cards
 				g.table.CurrentHand.BettingRound = models.RoundFlop
 			case models.RoundFlop:
-				g.table.CurrentHand.CommunityCards = append(g.table.CurrentHand.CommunityCards, g.table.Deck.Deal())
+				card, err := g.table.Deck.Deal()
+				if err != nil {
+					g.completeHand()
+					return
+				}
+				g.table.CurrentHand.CommunityCards = append(g.table.CurrentHand.CommunityCards, card)
 				g.table.CurrentHand.BettingRound = models.RoundTurn
 			case models.RoundTurn:
-				g.table.CurrentHand.CommunityCards = append(g.table.CurrentHand.CommunityCards, g.table.Deck.Deal())
+				card, err := g.table.Deck.Deal()
+				if err != nil {
+					g.completeHand()
+					return
+				}
+				g.table.CurrentHand.CommunityCards = append(g.table.CurrentHand.CommunityCards, card)
 				g.table.CurrentHand.BettingRound = models.RoundRiver
 			}
 		}
@@ -311,13 +377,29 @@ func (g *Game) advanceToNextRound() {
 
 	switch g.table.CurrentHand.BettingRound {
 	case models.RoundPreflop:
-		g.table.CurrentHand.CommunityCards = g.table.Deck.DealMultiple(3)
+		cards, err := g.table.Deck.DealMultiple(3)
+		if err != nil {
+			// Deck exhaustion - should never happen with proper deck, but handle gracefully
+			g.completeHand()
+			return
+		}
+		g.table.CurrentHand.CommunityCards = cards
 		g.table.CurrentHand.BettingRound = models.RoundFlop
 	case models.RoundFlop:
-		g.table.CurrentHand.CommunityCards = append(g.table.CurrentHand.CommunityCards, g.table.Deck.Deal())
+		card, err := g.table.Deck.Deal()
+		if err != nil {
+			g.completeHand()
+			return
+		}
+		g.table.CurrentHand.CommunityCards = append(g.table.CurrentHand.CommunityCards, card)
 		g.table.CurrentHand.BettingRound = models.RoundTurn
 	case models.RoundTurn:
-		g.table.CurrentHand.CommunityCards = append(g.table.CurrentHand.CommunityCards, g.table.Deck.Deal())
+		card, err := g.table.Deck.Deal()
+		if err != nil {
+			g.completeHand()
+			return
+		}
+		g.table.CurrentHand.CommunityCards = append(g.table.CurrentHand.CommunityCards, card)
 		g.table.CurrentHand.BettingRound = models.RoundRiver
 	case models.RoundRiver:
 		g.completeHand()
@@ -334,12 +416,8 @@ func (g *Game) completeHand() {
 		g.potCalculator = NewPotCalculator()
 	}
 
-	// Add any remaining bets to the pot
-	for _, p := range g.table.Players {
-		if p != nil {
-			g.table.CurrentHand.Pot.Main += p.Bet
-		}
-	}
+	// Calculate final pots including any remaining bets
+	g.table.CurrentHand.Pot = g.potCalculator.CalculatePots(g.table.Players)
 
 	// Determine winners and distribute chips
 	g.table.Winners = DistributeWinnings(g.table.CurrentHand.Pot, g.table.Players, g.table.CurrentHand.CommunityCards)
@@ -452,6 +530,7 @@ func (g *Game) stopActionTimer() {
 }
 
 func (g *Game) HandleTimeout(playerID string) error {
+	// Note: ProcessAction already has mutex lock, so this is safe
 	return g.ProcessAction(playerID, models.ActionFold, 0)
 }
 
@@ -478,5 +557,81 @@ func (g *Game) getNextActivePosition(currentPos int) int {
 	}
 
 	// If no active player found, return current position (shouldn't happen in normal game)
+	return currentPos
+}
+
+// findNextDealer finds the next dealer position (rotates the button)
+func (g *Game) findNextDealer() int {
+	maxPlayers := len(g.table.Players)
+	if maxPlayers == 0 {
+		return 0
+	}
+
+	// If this is the first hand (dealer position is -1 or invalid), find first active player
+	if g.table.CurrentHand.DealerPosition < 0 || g.table.CurrentHand.DealerPosition >= maxPlayers {
+		for i, p := range g.table.Players {
+			if p != nil && p.Status != models.StatusSittingOut && p.Chips > 0 {
+				return i
+			}
+		}
+		return 0
+	}
+
+	// Rotate dealer button to next active player
+	nextPos := (g.table.CurrentHand.DealerPosition + 1) % maxPlayers
+	checked := 0
+
+	for checked < maxPlayers {
+		player := g.table.Players[nextPos]
+		if player != nil && player.Status != models.StatusSittingOut && player.Chips > 0 {
+			return nextPos
+		}
+		nextPos = (nextPos + 1) % maxPlayers
+		checked++
+	}
+
+	// Fallback to current dealer position
+	return g.table.CurrentHand.DealerPosition
+}
+
+// calculateBlindPositions determines small blind and big blind positions
+func (g *Game) calculateBlindPositions(dealerPos int, activePlayers int) (int, int) {
+	maxPlayers := len(g.table.Players)
+	if maxPlayers == 0 {
+		return 0, 0
+	}
+
+	// Heads-up (2 players): dealer is small blind, other player is big blind
+	if activePlayers == 2 {
+		sbPos := dealerPos
+		bbPos := g.getNextActivePosition(dealerPos)
+		return sbPos, bbPos
+	}
+
+	// 3+ players: small blind is left of dealer, big blind is left of small blind
+	sbPos := g.getNextActivePosition(dealerPos)
+	bbPos := g.getNextActivePosition(sbPos)
+	return sbPos, bbPos
+}
+
+// getNextActivePositionForBlinds finds next seat with a player who has chips (for blind posting)
+func (g *Game) getNextActivePositionForBlinds(currentPos int) int {
+	maxPlayers := len(g.table.Players)
+	if maxPlayers == 0 {
+		return 0
+	}
+
+	nextPos := (currentPos + 1) % maxPlayers
+	checked := 0
+
+	for checked < maxPlayers {
+		player := g.table.Players[nextPos]
+		if player != nil && player.Status != models.StatusSittingOut && player.Chips > 0 {
+			return nextPos
+		}
+		nextPos = (nextPos + 1) % maxPlayers
+		checked++
+	}
+
 	return currentPos
 }
