@@ -39,13 +39,14 @@ export const GameView: React.FC = () => {
   const [raiseAmount, setRaiseAmount] = useState(0);
 
   useEffect(() => {
-    if (isConnected) {
+    if (isConnected && tableId) {
       send({
         type: 'subscribe_table',
         payload: { table_id: tableId },
       });
     }
-  }, [isConnected, tableId, send]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConnected, tableId]);
 
   useEffect(() => {
     if (lastMessage) {

@@ -817,16 +817,25 @@ func sendTableState(c *Client, tableID string) {
 		}
 	}
 
+	payload := map[string]interface{}{
+		"table_id":        tableID,
+		"players":         players,
+		"community_cards": communityCards,
+		"pot":             state.CurrentHand.Pot.Main + sumSidePots(state.CurrentHand.Pot.Side),
+		"current_turn":    currentTurn,
+		"status":          string(state.Status),
+		"betting_round":   string(state.CurrentHand.BettingRound),
+		"current_bet":     state.CurrentHand.CurrentBet,
+	}
+
+	// Add action deadline if there's an active player
+	if !state.CurrentHand.ActionDeadline.IsZero() {
+		payload["action_deadline"] = state.CurrentHand.ActionDeadline.Format(time.RFC3339)
+	}
+
 	sendToClient(c, WSMessage{
-		Type: "table_state",
-		Payload: map[string]interface{}{
-			"table_id":        tableID,
-			"players":         players,
-			"community_cards": communityCards,
-			"pot":             state.CurrentHand.Pot.Main + sumSidePots(state.CurrentHand.Pot.Side),
-			"current_turn":    currentTurn,
-			"status":          string(state.Status),
-		},
+		Type:    "table_state",
+		Payload: payload,
 	})
 }
 
@@ -923,16 +932,25 @@ func broadcastTableState(tableID string) {
 				}
 			}
 
+			payload := map[string]interface{}{
+				"table_id":        tableID,
+				"players":         players,
+				"community_cards": communityCards,
+				"pot":             state.CurrentHand.Pot.Main + sumSidePots(state.CurrentHand.Pot.Side),
+				"current_turn":    currentTurn,
+				"status":          string(state.Status),
+				"betting_round":   string(state.CurrentHand.BettingRound),
+				"current_bet":     state.CurrentHand.CurrentBet,
+			}
+
+			// Add action deadline if there's an active player
+			if !state.CurrentHand.ActionDeadline.IsZero() {
+				payload["action_deadline"] = state.CurrentHand.ActionDeadline.Format(time.RFC3339)
+			}
+
 			msg := WSMessage{
-				Type: "game_update",
-				Payload: map[string]interface{}{
-					"table_id":        tableID,
-					"players":         players,
-					"community_cards": communityCards,
-					"pot":             state.CurrentHand.Pot.Main + sumSidePots(state.CurrentHand.Pot.Side),
-					"current_turn":    currentTurn,
-					"status":          string(state.Status),
-				},
+				Type:    "game_update",
+				Payload: payload,
 			}
 
 			data, _ := json.Marshal(msg)
