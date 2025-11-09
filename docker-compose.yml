@@ -4,6 +4,7 @@ services:
   # MySQL Database
   db:
     image: mysql:8.0
+    platform: linux/arm64
     container_name: poker-db
     restart: unless-stopped
     environment:
@@ -29,8 +30,8 @@ services:
   # Go Backend API
   backend:
     build:
-      context: ./platform/backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: platform/backend/Dockerfile
     container_name: poker-backend
     restart: unless-stopped
     environment:

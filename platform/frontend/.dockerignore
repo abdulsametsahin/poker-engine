@@ -42,7 +42,6 @@ README.md
 # Docker
 Dockerfile
 .dockerignore
-nginx.conf
 
 # Misc
 .eslintcache
