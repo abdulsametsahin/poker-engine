@@ -36,9 +36,27 @@ Complete poker platform with:
 
 ## Running the Platform
 
-See [platform/README.md](platform/README.md) for detailed setup instructions.
+### 🚀 Quick Start with Docker (Recommended)
 
-### Quick Start
+The easiest way to run the entire platform with a single command:
+
+```bash
+docker compose up -d --build
+```
+
+Or use the convenience script:
+
+```bash
+./start.sh
+```
+
+Access the platform at `http://localhost`
+
+**See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed Docker deployment instructions, including production deployment to Digital Ocean.**
+
+### Manual Setup (Alternative)
+
+For development without Docker:
 
 ```bash
 # 1. Setup database

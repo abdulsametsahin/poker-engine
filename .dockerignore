@@ -1,0 +1,32 @@
+# Git
+.git/
+.gitignore
+
+# Docker
+docker-compose.yml
+*.dockerfile
+Dockerfile*
+
+# Environment
+.env*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation
+*.md
+
+# Build artifacts
+*.exe
+*.test
+*.out
+build/
+dist/
+node_modules/
