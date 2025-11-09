@@ -1,14 +1,12 @@
 package main
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"sync"
-	"context"
 	"time"
 
 	"poker-platform/backend/internal/auth"
@@ -18,8 +16,9 @@ import (
 	"poker-engine/engine"
 	pokerModels "poker-engine/models"
 
+	"github.com/gin-contrib/cors"
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 	"github.com/joho/godotenv"
 )
@@ -111,248 +110,293 @@ func main() {
 	if err != nil {
 		log.Fatal("Database connection failed:", err)
 	}
-	defer database.Close()
+
+	// Get underlying SQL DB for cleanup
+	sqlDB, err := database.DB.DB()
+	if err != nil {
+		log.Fatal("Failed to get database connection:", err)
+	}
+	defer sqlDB.Close()
 
 	authService = auth.NewService(getEnv("JWT_SECRET", "secret"))
 
-	r := mux.NewRouter()
+	// Set Gin mode based on environment
+	if getEnv("ENV", "development") == "production" {
+		gin.SetMode(gin.ReleaseMode)
+	}
 
-	r.Use(corsMiddleware)
+	r := gin.Default()
 
-	r.HandleFunc("/api/auth/register", handleRegister).Methods("POST", "OPTIONS")
-	r.HandleFunc("/api/auth/login", handleLogin).Methods("POST", "OPTIONS")
-	r.HandleFunc("/api/tables", authMiddleware(handleGetTables)).Methods("GET", "OPTIONS")
-	r.HandleFunc("/api/tables/active", authMiddleware(handleGetActiveTables)).Methods("GET", "OPTIONS")
-	r.HandleFunc("/api/tables/past", authMiddleware(handleGetPastTables)).Methods("GET", "OPTIONS")
-	r.HandleFunc("/api/tables", authMiddleware(handleCreateTable)).Methods("POST", "OPTIONS")
-	r.HandleFunc("/api/tables/{id}/join", authMiddleware(handleJoinTable)).Methods("POST", "OPTIONS")
-	r.HandleFunc("/api/matchmaking/join", authMiddleware(handleJoinMatchmaking)).Methods("POST", "OPTIONS")
-	r.HandleFunc("/api/matchmaking/status", authMiddleware(handleMatchmakingStatus)).Methods("GET", "OPTIONS")
-	r.HandleFunc("/api/matchmaking/leave", authMiddleware(handleLeaveMatchmaking)).Methods("POST", "OPTIONS")
-	r.HandleFunc("/ws", handleWebSocket)
+	// Configure CORS using gin-contrib/cors
+	corsConfig := cors.Config{
+		AllowOriginFunc: func(origin string) bool {
+			return true // Allow all origins
+		},
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
+		AllowHeaders:     []string{"Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"},
+		ExposeHeaders:    []string{"Content-Length", "Content-Type"},
+		AllowCredentials: true,
+		MaxAge:           86400 * time.Second,
+	}
+	r.Use(cors.New(corsConfig))
+
+	// Public routes
+	r.POST("/api/auth/register", handleRegister)
+	r.POST("/api/auth/login", handleLogin)
+
+	// Protected routes
+	authorized := r.Group("/")
+	authorized.Use(authMiddleware())
+	{
+		authorized.GET("/api/tables", handleGetTables)
+		authorized.GET("/api/tables/active", handleGetActiveTables)
+		authorized.GET("/api/tables/past", handleGetPastTables)
+		authorized.POST("/api/tables", handleCreateTable)
+		authorized.POST("/api/tables/:id/join", handleJoinTable)
+		authorized.POST("/api/matchmaking/join", handleJoinMatchmaking)
+		authorized.GET("/api/matchmaking/status", handleMatchmakingStatus)
+		authorized.POST("/api/matchmaking/leave", handleLeaveMatchmaking)
+	}
+
+	// WebSocket endpoint (handles auth internally)
+	r.GET("/ws", handleWebSocket)
 
 	port := getEnv("SERVER_PORT", "8080")
 	log.Printf("Server starting on port %s", port)
-	log.Fatal(http.ListenAndServe(":"+port, r))
+	log.Fatal(r.Run(":" + port))
 }
 
-func handleRegister(w http.ResponseWriter, r *http.Request) {
+func handleRegister(c *gin.Context) {
 	var req models.RegisterRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "Invalid request")
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
 
 	hash, err := authService.HashPassword(req.Password)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "Server error")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Server error"})
 		return
 	}
 
 	userID := auth.GenerateID()
-	_, err = database.Exec(`
-		INSERT INTO users (id, username, email, password_hash, chips)
-		VALUES (?, ?, ?, ?, 1000)
-	`, userID, req.Username, req.Email, hash)
+	user := models.User{
+		ID:           userID,
+		Username:     req.Username,
+		Email:        req.Email,
+		PasswordHash: hash,
+		Chips:        1000,
+	}
 
-	if err != nil {
-		respondError(w, http.StatusBadRequest, "Username or email already exists")
+	if err := database.Create(&user).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Username or email already exists"})
 		return
 	}
 
 	token, _ := authService.GenerateToken(userID)
-	user := models.User{
-		ID:       userID,
-		Username: req.Username,
-		Email:    req.Email,
-		Chips:    1000,
-	}
+	user.PasswordHash = ""
 
-	respondJSON(w, http.StatusCreated, models.AuthResponse{Token: token, User: user})
+	c.JSON(http.StatusCreated, models.AuthResponse{Token: token, User: user})
 }
 
-func handleLogin(w http.ResponseWriter, r *http.Request) {
+func handleLogin(c *gin.Context) {
 	var req models.LoginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "Invalid request")
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
 
 	var user models.User
-	err := database.QueryRow(`
-		SELECT id, username, email, password_hash, chips
-		FROM users WHERE username = ?
-	`, req.Username).Scan(&user.ID, &user.Username, &user.Email, &user.PasswordHash, &user.Chips)
+	if err := database.Where("username = ?", req.Username).First(&user).Error; err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+		return
+	}
 
-	if err == sql.ErrNoRows || !authService.CheckPassword(req.Password, user.PasswordHash) {
-		respondError(w, http.StatusUnauthorized, "Invalid credentials")
+	if !authService.CheckPassword(req.Password, user.PasswordHash) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
 		return
 	}
 
 	token, _ := authService.GenerateToken(user.ID)
 	user.PasswordHash = ""
 
-	respondJSON(w, http.StatusOK, models.AuthResponse{Token: token, User: user})
+	c.JSON(http.StatusOK, models.AuthResponse{Token: token, User: user})
 }
 
-func handleGetTables(w http.ResponseWriter, r *http.Request) {
-	userID := r.Context().Value("user_id").(string)
+func handleGetTables(c *gin.Context) {
+	userID := c.GetString("user_id")
 	_ = userID
 
-	rows, err := database.Query(`
-		SELECT t.id, t.name, t.game_type, t.status, t.small_blind, t.big_blind, t.max_players,
+	type TableResult struct {
+		ID             string `json:"id"`
+		Name           string `json:"name"`
+		GameType       string `json:"game_type"`
+		Status         string `json:"status"`
+		SmallBlind     int    `json:"small_blind"`
+		BigBlind       int    `json:"big_blind"`
+		MaxPlayers     int    `json:"max_players"`
+		MinBuyIn       *int   `json:"min_buy_in"`
+		MaxBuyIn       *int   `json:"max_buy_in"`
+		CurrentPlayers int64  `json:"current_players"`
+	}
+
+	var results []TableResult
+
+	err := database.
+		Table("tables t").
+		Select(`t.id, t.name, t.game_type, t.status, t.small_blind, t.big_blind, t.max_players,
 			t.min_buy_in, t.max_buy_in,
-			COUNT(DISTINCT ts.user_id) as current_players
-		FROM tables t
-		LEFT JOIN table_seats ts ON t.id = ts.table_id AND ts.left_at IS NULL
-		WHERE t.status IN ('waiting', 'playing')
-		GROUP BY t.id
-		ORDER BY t.created_at DESC LIMIT 50
-	`)
+			COUNT(DISTINCT ts.user_id) as current_players`).
+		Joins("LEFT JOIN table_seats ts ON t.id = ts.table_id AND ts.left_at IS NULL").
+		Where("t.status IN ?", []string{"waiting", "playing"}).
+		Group("t.id").
+		Order("t.created_at DESC").
+		Limit(50).
+		Scan(&results).Error
+
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "Server error")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Server error"})
 		return
 	}
-	defer rows.Close()
 
-	tables := []map[string]interface{}{}
-	for rows.Next() {
-		var id, name, gameType, status string
-		var smallBlind, bigBlind, maxPlayers, minBuyIn, maxBuyIn, currentPlayers int
-		rows.Scan(&id, &name, &gameType, &status, &smallBlind, &bigBlind, &maxPlayers, &minBuyIn, &maxBuyIn, &currentPlayers)
-
-		tables = append(tables, map[string]interface{}{
-			"id":              id,
-			"name":            name,
-			"game_type":       gameType,
-			"status":          status,
-			"small_blind":     smallBlind,
-			"big_blind":       bigBlind,
-			"max_players":     maxPlayers,
-			"min_buy_in":      minBuyIn,
-			"max_buy_in":      maxBuyIn,
-			"current_players": currentPlayers,
-		})
-	}
-
-	respondJSON(w, http.StatusOK, tables)
+	c.JSON(http.StatusOK, results)
 }
 
-func handleGetActiveTables(w http.ResponseWriter, r *http.Request) {
-	userID := r.Context().Value("user_id").(string)
+func handleGetActiveTables(c *gin.Context) {
+	userID := c.GetString("user_id")
 
-	rows, err := database.Query(`
-		SELECT t.id, t.name, t.game_type, t.status, t.small_blind, t.big_blind, t.max_players,
+	type TableResult struct {
+		ID             string    `json:"id"`
+		Name           string    `json:"name"`
+		GameType       string    `json:"game_type"`
+		Status         string    `json:"status"`
+		SmallBlind     int       `json:"small_blind"`
+		BigBlind       int       `json:"big_blind"`
+		MaxPlayers     int       `json:"max_players"`
+		MinBuyIn       *int      `json:"min_buy_in"`
+		MaxBuyIn       *int      `json:"max_buy_in"`
+		CreatedAt      time.Time `json:"created_at"`
+		CurrentPlayers int64     `json:"current_players"`
+		IsPlaying      int       `json:"is_playing"`
+	}
+
+	var results []TableResult
+
+	err := database.
+		Table("tables t").
+		Select(`t.id, t.name, t.game_type, t.status, t.small_blind, t.big_blind, t.max_players,
 			t.min_buy_in, t.max_buy_in, t.created_at,
 			COUNT(DISTINCT ts.user_id) as current_players,
-			MAX(CASE WHEN ts.user_id = ? THEN 1 ELSE 0 END) as is_playing
-		FROM tables t
-		LEFT JOIN table_seats ts ON t.id = ts.table_id AND ts.left_at IS NULL
-		WHERE t.status IN ('waiting', 'playing') AND t.completed_at IS NULL
-		GROUP BY t.id
-		ORDER BY t.created_at DESC LIMIT 50
-	`, userID)
+			MAX(CASE WHEN ts.user_id = ? THEN 1 ELSE 0 END) as is_playing`, userID).
+		Joins("LEFT JOIN table_seats ts ON t.id = ts.table_id AND ts.left_at IS NULL").
+		Where("t.status IN ? AND t.completed_at IS NULL", []string{"waiting", "playing"}).
+		Group("t.id").
+		Order("t.created_at DESC").
+		Limit(50).
+		Scan(&results).Error
+
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "Server error")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Server error"})
 		return
 	}
-	defer rows.Close()
 
-	tables := []map[string]interface{}{}
-	for rows.Next() {
-		var id, name, gameType, status string
-		var smallBlind, bigBlind, maxPlayers, minBuyIn, maxBuyIn, currentPlayers, isPlaying int
-		var createdAt time.Time
-		rows.Scan(&id, &name, &gameType, &status, &smallBlind, &bigBlind, &maxPlayers, &minBuyIn, &maxBuyIn, &createdAt, &currentPlayers, &isPlaying)
-
-		tables = append(tables, map[string]interface{}{
-			"id":              id,
-			"name":            name,
-			"game_type":       gameType,
-			"status":          status,
-			"small_blind":     smallBlind,
-			"big_blind":       bigBlind,
-			"max_players":     maxPlayers,
-			"min_buy_in":      minBuyIn,
-			"max_buy_in":      maxBuyIn,
-			"current_players": currentPlayers,
-			"is_playing":      isPlaying == 1,
-			"created_at":      createdAt,
-		})
+	// Convert results to map format to match original behavior
+	tables := make([]map[string]interface{}, len(results))
+	for i, r := range results {
+		tables[i] = map[string]interface{}{
+			"id":              r.ID,
+			"name":            r.Name,
+			"game_type":       r.GameType,
+			"status":          r.Status,
+			"small_blind":     r.SmallBlind,
+			"big_blind":       r.BigBlind,
+			"max_players":     r.MaxPlayers,
+			"min_buy_in":      r.MinBuyIn,
+			"max_buy_in":      r.MaxBuyIn,
+			"current_players": r.CurrentPlayers,
+			"is_playing":      r.IsPlaying == 1,
+			"created_at":      r.CreatedAt,
+		}
 	}
 
-	respondJSON(w, http.StatusOK, tables)
+	c.JSON(http.StatusOK, tables)
 }
 
-func handleGetPastTables(w http.ResponseWriter, r *http.Request) {
-	userID := r.Context().Value("user_id").(string)
+func handleGetPastTables(c *gin.Context) {
+	userID := c.GetString("user_id")
 
-	rows, err := database.Query(`
-		SELECT t.id, t.name, t.game_type, t.small_blind, t.big_blind, t.max_players,
+	type TableResult struct {
+		ID           string         `json:"id"`
+		Name         string         `json:"name"`
+		GameType     string         `json:"game_type"`
+		SmallBlind   int            `json:"small_blind"`
+		BigBlind     int            `json:"big_blind"`
+		MaxPlayers   int            `json:"max_players"`
+		MinBuyIn     *int           `json:"min_buy_in"`
+		MaxBuyIn     *int           `json:"max_buy_in"`
+		CompletedAt  *time.Time     `json:"completed_at"`
+		TotalPlayers int64          `json:"total_players"`
+		Participated int            `json:"participated"`
+		TotalHands   int64          `json:"total_hands"`
+	}
+
+	var results []TableResult
+
+	err := database.
+		Table("tables t").
+		Select(`t.id, t.name, t.game_type, t.small_blind, t.big_blind, t.max_players,
 			t.min_buy_in, t.max_buy_in, t.completed_at,
 			COUNT(DISTINCT ts.user_id) as total_players,
 			MAX(CASE WHEN ts.user_id = ? THEN 1 ELSE 0 END) as participated,
-			(SELECT COUNT(*) FROM hands WHERE table_id = t.id) as total_hands
-		FROM tables t
-		LEFT JOIN table_seats ts ON t.id = ts.table_id
-		WHERE t.completed_at IS NOT NULL
-		GROUP BY t.id
-		ORDER BY t.completed_at DESC LIMIT 50
-	`, userID)
+			(SELECT COUNT(*) FROM hands WHERE table_id = t.id) as total_hands`, userID).
+		Joins("LEFT JOIN table_seats ts ON t.id = ts.table_id").
+		Where("t.completed_at IS NOT NULL").
+		Group("t.id").
+		Order("t.completed_at DESC").
+		Limit(50).
+		Scan(&results).Error
+
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "Server error")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Server error"})
 		return
 	}
-	defer rows.Close()
 
-	tables := []map[string]interface{}{}
-	for rows.Next() {
-		var id, name, gameType string
-		var smallBlind, bigBlind, maxPlayers, minBuyIn, maxBuyIn, totalPlayers, participated, totalHands int
-		var completedAt sql.NullTime
-		rows.Scan(&id, &name, &gameType, &smallBlind, &bigBlind, &maxPlayers, &minBuyIn, &maxBuyIn, &completedAt, &totalPlayers, &participated, &totalHands)
-
-		tableData := map[string]interface{}{
-			"id":            id,
-			"name":          name,
-			"game_type":     gameType,
-			"small_blind":   smallBlind,
-			"big_blind":     bigBlind,
-			"max_players":   maxPlayers,
-			"min_buy_in":    minBuyIn,
-			"max_buy_in":    maxBuyIn,
-			"total_players": totalPlayers,
-			"participated":  participated == 1,
-			"total_hands":   totalHands,
+	// Convert results to map format to match original behavior
+	tables := make([]map[string]interface{}, len(results))
+	for i, r := range results {
+		tables[i] = map[string]interface{}{
+			"id":            r.ID,
+			"name":          r.Name,
+			"game_type":     r.GameType,
+			"small_blind":   r.SmallBlind,
+			"big_blind":     r.BigBlind,
+			"max_players":   r.MaxPlayers,
+			"min_buy_in":    r.MinBuyIn,
+			"max_buy_in":    r.MaxBuyIn,
+			"total_players": r.TotalPlayers,
+			"participated":  r.Participated == 1,
+			"total_hands":   r.TotalHands,
 		}
-
-		if completedAt.Valid {
-			tableData["completed_at"] = completedAt.Time
+		if r.CompletedAt != nil {
+			tables[i]["completed_at"] = r.CompletedAt
 		}
-
-		tables = append(tables, tableData)
 	}
 
-	respondJSON(w, http.StatusOK, tables)
+	c.JSON(http.StatusOK, tables)
 }
 
-func handleCreateTable(w http.ResponseWriter, r *http.Request) {
+func handleCreateTable(c *gin.Context) {
 	var table models.Table
-	if err := json.NewDecoder(r.Body).Decode(&table); err != nil {
-		respondError(w, http.StatusBadRequest, "Invalid request")
+	if err := c.ShouldBindJSON(&table); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
 
 	table.ID = uuid.New().String()
 	table.Status = "waiting"
 
-	_, err := database.Exec(`
-		INSERT INTO tables (id, name, game_type, status, small_blind, big_blind, max_players, min_buy_in, max_buy_in)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, table.ID, table.Name, table.GameType, table.Status, table.SmallBlind, table.BigBlind, table.MaxPlayers, table.MinBuyIn, table.MaxBuyIn)
-
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, "Failed to create table")
+	if err := database.Create(&table).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create table"})
 		return
 	}
 
@@ -367,91 +411,106 @@ func handleCreateTable(w http.ResponseWriter, r *http.Request) {
 
 	createEngineTable(table.ID, table.GameType, table.SmallBlind, table.BigBlind, table.MaxPlayers, minBuyIn, maxBuyIn)
 
-	respondJSON(w, http.StatusCreated, table)
+	c.JSON(http.StatusCreated, table)
 }
 
-func handleJoinTable(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	tableID := vars["id"]
-	userID := r.Context().Value("user_id").(string)
+func handleJoinTable(c *gin.Context) {
+	tableID := c.Param("id")
+	userID := c.GetString("user_id")
 
 	var buyIn struct {
 		BuyIn int `json:"buy_in"`
 	}
-	json.NewDecoder(r.Body).Decode(&buyIn)
+	if err := c.ShouldBindJSON(&buyIn); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
 
 	var user models.User
-	database.QueryRow("SELECT id, username, chips FROM users WHERE id = ?", userID).Scan(&user.ID, &user.Username, &user.Chips)
+	if err := database.Where("id = ?", userID).First(&user).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "User not found"})
+		return
+	}
 
 	if user.Chips < buyIn.BuyIn {
-		respondError(w, http.StatusBadRequest, "Insufficient chips")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Insufficient chips"})
 		return
 	}
 
-	var maxPlayers int
-	database.QueryRow("SELECT max_players FROM tables WHERE id = ?", tableID).Scan(&maxPlayers)
-
-	var currentPlayers int
-	database.QueryRow("SELECT COUNT(*) FROM table_seats WHERE table_id = ? AND left_at IS NULL", tableID).Scan(&currentPlayers)
-
-	if currentPlayers >= maxPlayers {
-		respondError(w, http.StatusBadRequest, "Table is full")
+	var table models.Table
+	if err := database.Where("id = ?", tableID).First(&table).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Table not found"})
 		return
 	}
 
-	seatNumber := currentPlayers
+	var currentPlayers int64
+	database.Model(&models.TableSeat{}).Where("table_id = ? AND left_at IS NULL", tableID).Count(&currentPlayers)
 
-	_, err := database.Exec(`
-		INSERT INTO table_seats (table_id, user_id, seat_number, chips, status)
-		VALUES (?, ?, ?, ?, 'active')
-	`, tableID, userID, seatNumber, buyIn.BuyIn)
-
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, "Failed to join table")
+	if int(currentPlayers) >= table.MaxPlayers {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Table is full"})
 		return
 	}
 
-	database.Exec("UPDATE users SET chips = chips - ? WHERE id = ?", buyIn.BuyIn, userID)
+	seatNumber := int(currentPlayers)
+
+	tableSeat := models.TableSeat{
+		TableID:    tableID,
+		UserID:     userID,
+		SeatNumber: seatNumber,
+		Chips:      buyIn.BuyIn,
+		Status:     "active",
+	}
+
+	if err := database.Create(&tableSeat).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to join table"})
+		return
+	}
+
+	database.Model(&models.User{}).Where("id = ?", userID).Update("chips", user.Chips-buyIn.BuyIn)
 
 	addPlayerToEngine(tableID, userID, user.Username, seatNumber, buyIn.BuyIn)
 
-	respondJSON(w, http.StatusOK, map[string]string{"status": "joined", "table_id": tableID})
+	c.JSON(http.StatusOK, gin.H{"status": "joined", "table_id": tableID})
 }
 
-func handleJoinMatchmaking(w http.ResponseWriter, r *http.Request) {
-	userID := r.Context().Value("user_id").(string)
+func handleJoinMatchmaking(c *gin.Context) {
+	userID := c.GetString("user_id")
 
 	var req struct {
 		GameMode string `json:"game_mode"` // "headsup" or "3player"
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := c.ShouldBindJSON(&req); err != nil {
 		req.GameMode = "headsup" // default
 	}
 
 	// Validate game mode
 	preset, ok := tablePresets[req.GameMode]
 	if !ok {
-		respondError(w, http.StatusBadRequest, "Invalid game mode")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid game mode"})
 		return
 	}
 
 	// Check if user is already in queue
-	var existingCount int
-	database.QueryRow("SELECT COUNT(*) FROM matchmaking_queue WHERE user_id = ? AND status = 'waiting'", userID).Scan(&existingCount)
+	var existingCount int64
+	database.Model(&models.MatchmakingEntry{}).Where("user_id = ? AND status = ?", userID, "waiting").Count(&existingCount)
 	if existingCount > 0 {
-		respondError(w, http.StatusBadRequest, "Already in matchmaking queue")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Already in matchmaking queue"})
 		return
 	}
 
 	// Add to database queue
-	_, err := database.Exec(`
-		INSERT INTO matchmaking_queue (user_id, game_type, queue_type, status, min_buy_in, max_buy_in)
-		VALUES (?, 'cash', ?, 'waiting', ?, ?)
-	`, userID, req.GameMode, preset.MinBuyIn, preset.MaxBuyIn)
+	entry := models.MatchmakingEntry{
+		UserID:    userID,
+		GameType:  "cash",
+		QueueType: req.GameMode,
+		Status:    "waiting",
+		MinBuyIn:  &preset.MinBuyIn,
+		MaxBuyIn:  &preset.MaxBuyIn,
+	}
 
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, "Failed to join matchmaking")
+	if err := database.Create(&entry).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to join matchmaking"})
 		return
 	}
 
@@ -466,50 +525,44 @@ func handleJoinMatchmaking(w http.ResponseWriter, r *http.Request) {
 	// Process matchmaking if we have enough players
 	go processMatchmaking(req.GameMode)
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"status":       "queued",
-		"game_mode":    req.GameMode,
-		"queue_size":   queueSize,
-		"required":     preset.MaxPlayers,
+	c.JSON(http.StatusOK, gin.H{
+		"status":     "queued",
+		"game_mode":  req.GameMode,
+		"queue_size": queueSize,
+		"required":   preset.MaxPlayers,
 	})
 }
 
-func handleMatchmakingStatus(w http.ResponseWriter, r *http.Request) {
-	userID := r.Context().Value("user_id").(string)
+func handleMatchmakingStatus(c *gin.Context) {
+	userID := c.GetString("user_id")
 
-	var status, gameType string
-	var matchedTableID sql.NullString
-	err := database.QueryRow(`
-		SELECT mq.status, mq.game_type
-		FROM matchmaking_queue mq
-		WHERE mq.user_id = ? AND mq.status IN ('waiting', 'matched')
-		ORDER BY mq.created_at DESC LIMIT 1
-	`, userID).Scan(&status, &gameType)
+	var entry models.MatchmakingEntry
+	err := database.
+		Where("user_id = ? AND status IN ?", userID, []string{"waiting", "matched"}).
+		Order("created_at DESC").
+		First(&entry).Error
 
-	if err == sql.ErrNoRows {
-		respondJSON(w, http.StatusOK, map[string]interface{}{"status": "not_queued"})
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"status": "not_queued"})
 		return
 	}
 
+	response := gin.H{
+		"status": entry.Status,
+	}
+
 	// Check if matched and find table
-	if status == "matched" {
-		database.QueryRow(`
-			SELECT ts.table_id FROM table_seats ts
-			WHERE ts.user_id = ? AND ts.left_at IS NULL
-			ORDER BY ts.joined_at DESC LIMIT 1
-		`, userID).Scan(&matchedTableID)
-	}
-
-	response := map[string]interface{}{
-		"status": status,
-	}
-
-	if matchedTableID.Valid {
-		response["table_id"] = matchedTableID.String
+	if entry.Status == "matched" {
+		var seat models.TableSeat
+		if err := database.Where("user_id = ? AND left_at IS NULL", userID).
+			Order("joined_at DESC").
+			First(&seat).Error; err == nil {
+			response["table_id"] = seat.TableID
+		}
 	}
 
 	// Get queue size for waiting status
-	if status == "waiting" {
+	if entry.Status == "waiting" {
 		for gameMode, queue := range bridge.matchmakingQueue {
 			for _, qUserID := range queue {
 				if qUserID == userID {
@@ -524,14 +577,16 @@ func handleMatchmakingStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	respondJSON(w, http.StatusOK, response)
+	c.JSON(http.StatusOK, response)
 }
 
-func handleLeaveMatchmaking(w http.ResponseWriter, r *http.Request) {
-	userID := r.Context().Value("user_id").(string)
+func handleLeaveMatchmaking(c *gin.Context) {
+	userID := c.GetString("user_id")
 
 	// Remove from database
-	database.Exec("UPDATE matchmaking_queue SET status = 'cancelled' WHERE user_id = ? AND status = 'waiting'", userID)
+	database.Model(&models.MatchmakingEntry{}).
+		Where("user_id = ? AND status = ?", userID, "waiting").
+		Update("status", "cancelled")
 
 	// Remove from in-memory queue
 	bridge.matchmakingMu.Lock()
@@ -545,7 +600,7 @@ func handleLeaveMatchmaking(w http.ResponseWriter, r *http.Request) {
 	}
 	bridge.matchmakingMu.Unlock()
 
-	respondJSON(w, http.StatusOK, map[string]string{"status": "left"})
+	c.JSON(http.StatusOK, gin.H{"status": "left"})
 }
 
 func processMatchmaking(gameMode string) {
@@ -580,13 +635,15 @@ func processMatchmaking(gameMode string) {
 	var players []QueuedPlayer
 
 	for _, userID := range matchedUserIDs {
-		var p QueuedPlayer
-		err := database.QueryRow("SELECT id, username FROM users WHERE id = ?", userID).Scan(&p.UserID, &p.Username)
-		if err != nil {
+		var user models.User
+		if err := database.Where("id = ?", userID).First(&user).Error; err != nil {
 			log.Printf("Failed to get user info for %s: %v", userID, err)
 			continue
 		}
-		players = append(players, p)
+		players = append(players, QueuedPlayer{
+			UserID:   user.ID,
+			Username: user.Username,
+		})
 	}
 
 	if len(players) < preset.MaxPlayers {
@@ -598,12 +655,19 @@ func processMatchmaking(gameMode string) {
 	tableID := uuid.New().String()
 	tableName := fmt.Sprintf("%s - %s", preset.Name, tableID[:8])
 
-	_, err := database.Exec(`
-		INSERT INTO tables (id, name, game_type, status, small_blind, big_blind, max_players, min_buy_in, max_buy_in)
-		VALUES (?, ?, 'cash', 'waiting', ?, ?, ?, ?, ?)
-	`, tableID, tableName, preset.SmallBlind, preset.BigBlind, preset.MaxPlayers, preset.MinBuyIn, preset.MaxBuyIn)
+	table := models.Table{
+		ID:         tableID,
+		Name:       tableName,
+		GameType:   "cash",
+		Status:     "waiting",
+		SmallBlind: preset.SmallBlind,
+		BigBlind:   preset.BigBlind,
+		MaxPlayers: preset.MaxPlayers,
+		MinBuyIn:   &preset.MinBuyIn,
+		MaxBuyIn:   &preset.MaxBuyIn,
+	}
 
-	if err != nil {
+	if err := database.Create(&table).Error; err != nil {
 		log.Printf("Failed to create table: %v", err)
 		return
 	}
@@ -613,17 +677,24 @@ func processMatchmaking(gameMode string) {
 	// Add players to table
 	buyIn := preset.MinBuyIn
 	for i, player := range players {
-		database.Exec(`
-			INSERT INTO table_seats (table_id, user_id, seat_number, chips, status)
-			VALUES (?, ?, ?, ?, 'active')
-		`, tableID, player.UserID, i, buyIn)
+		seat := models.TableSeat{
+			TableID:    tableID,
+			UserID:     player.UserID,
+			SeatNumber: i,
+			Chips:      buyIn,
+			Status:     "active",
+		}
+		database.Create(&seat)
 
-		database.Exec(`
-			UPDATE matchmaking_queue SET status = 'matched', matched_at = NOW()
-			WHERE user_id = ? AND status = 'waiting'
-		`, player.UserID)
+		now := time.Now()
+		database.Model(&models.MatchmakingEntry{}).
+			Where("user_id = ? AND status = ?", player.UserID, "waiting").
+			Updates(map[string]interface{}{
+				"status":     "matched",
+				"matched_at": &now,
+			})
 
-		database.Exec("UPDATE users SET chips = chips - ? WHERE id = ?", buyIn, player.UserID)
+		database.Model(&models.User{}).Where("id = ?", player.UserID).UpdateColumn("chips", database.Raw("chips - ?", buyIn))
 
 		addPlayerToEngine(tableID, player.UserID, player.Username, i, buyIn)
 
@@ -746,7 +817,11 @@ func checkAndStartGame(tableID string) {
 		if err != nil {
 			log.Printf("Failed to start game: %v", err)
 		} else {
-			database.Exec("UPDATE tables SET status = 'playing', started_at = NOW() WHERE id = ?", tableID)
+			now := time.Now()
+			database.Model(&models.Table{}).Where("id = ?", tableID).Updates(map[string]interface{}{
+				"status":     "playing",
+				"started_at": &now,
+			})
 			broadcastTableState(tableID)
 		}
 	}
@@ -765,25 +840,28 @@ func createHandRecord(tableID string, event pokerModels.Event) {
 	bbPos, _ := data["bigBlindPosition"].(int)
 
 	// Insert hand record
-	result, err := database.Exec(`
-		INSERT INTO hands (table_id, hand_number, dealer_position, small_blind_position, 
-			big_blind_position, community_cards, pot_amount, winners)
-		VALUES (?, ?, ?, ?, ?, '[]', 0, '[]')
-	`, tableID, handNumber, dealerPos, sbPos, bbPos)
+	hand := models.Hand{
+		TableID:            tableID,
+		HandNumber:         handNumber,
+		DealerPosition:     dealerPos,
+		SmallBlindPosition: sbPos,
+		BigBlindPosition:   bbPos,
+		CommunityCards:     "[]",
+		PotAmount:          0,
+		Winners:            "[]",
+	}
 
-	if err != nil {
+	if err := database.Create(&hand).Error; err != nil {
 		log.Printf("Failed to create hand record: %v", err)
 		return
 	}
 
-	handID, _ := result.LastInsertId()
-	
 	// Store current hand ID for tracking actions
 	bridge.mu.Lock()
-	bridge.currentHandIDs[tableID] = handID
+	bridge.currentHandIDs[tableID] = hand.ID
 	bridge.mu.Unlock()
-	
-	log.Printf("Created hand record %d for table %s (hand #%d)", handID, tableID, handNumber)
+
+	log.Printf("Created hand record %d for table %s (hand #%d)", hand.ID, tableID, handNumber)
 }
 
 func updateHandRecord(tableID string, event pokerModels.Event) {
@@ -820,11 +898,13 @@ func updateHandRecord(tableID string, event pokerModels.Event) {
 	pot := hand.Pot.Main + sumSidePots(hand.Pot.Side)
 
 	// Update hand record with final data
-	_, err := database.Exec(`
-		UPDATE hands 
-		SET community_cards = ?, pot_amount = ?, winners = ?, completed_at = NOW()
-		WHERE id = ?
-	`, string(communityCardsJSON), pot, string(winnersJSON), handID)
+	now := time.Now()
+	err := database.Model(&models.Hand{}).Where("id = ?", handID).Updates(map[string]interface{}{
+		"community_cards": string(communityCardsJSON),
+		"pot_amount":      pot,
+		"winners":         string(winnersJSON),
+		"completed_at":    &now,
+	}).Error
 
 	if err != nil {
 		log.Printf("Failed to update hand data: %v", err)
@@ -878,13 +958,17 @@ func handleEngineEvent(tableID string, event pokerModels.Event) {
 	case "gameComplete":
 		// Game is over - only one player left
 		log.Printf("Game complete on table %s", tableID)
-		
+
 		// Mark table as completed in database
-		_, err := database.Exec("UPDATE tables SET status = 'completed', completed_at = NOW() WHERE id = ?", tableID)
+		now := time.Now()
+		err := database.Model(&models.Table{}).Where("id = ?", tableID).Updates(map[string]interface{}{
+			"status":       "completed",
+			"completed_at": &now,
+		}).Error
 		if err != nil {
 			log.Printf("Failed to update table status: %v", err)
 		}
-		
+
 		broadcastTableState(tableID)
 
 		// Send game complete message after a short delay to ensure hand winner is shown first
@@ -932,15 +1016,15 @@ func handleEngineEvent(tableID string, event pokerModels.Event) {
 	}
 }
 
-func handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	token := r.URL.Query().Get("token")
+func handleWebSocket(c *gin.Context) {
+	token := c.Query("token")
 	userID, err := authService.ValidateToken(token)
 	if err != nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 		return
 	}
 
-	conn, err := upgrader.Upgrade(w, r, nil)
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		log.Println("WebSocket upgrade error:", err)
 		return
@@ -1166,12 +1250,15 @@ func processGameAction(userID, tableID, action string, amount int) {
 		bridge.mu.RUnlock()
 
 		if hasHandID && handID > 0 {
-			_, err := database.Exec(`
-				INSERT INTO hand_actions (hand_id, user_id, action_type, amount, betting_round)
-				VALUES (?, ?, ?, ?, ?)
-			`, handID, userID, action, amount, bettingRound)
+			handAction := models.HandAction{
+				HandID:       handID,
+				UserID:       userID,
+				ActionType:   action,
+				Amount:       amount,
+				BettingRound: bettingRound,
+			}
 
-			if err != nil {
+			if err := database.Create(&handAction).Error; err != nil {
 				log.Printf("Failed to save hand action: %v", err)
 			} else {
 				log.Printf("Saved action %s by %s for hand %d", action, userID, handID)
@@ -1290,57 +1377,26 @@ func sendToClient(c *Client, msg WSMessage) {
 	}
 }
 
-func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
+func authMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" || len(authHeader) < 8 {
-			respondError(w, http.StatusUnauthorized, "Unauthorized")
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			c.Abort()
 			return
 		}
 
 		token := authHeader[7:]
 		userID, err := authService.ValidateToken(token)
 		if err != nil {
-			respondError(w, http.StatusUnauthorized, "Invalid token")
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+			c.Abort()
 			return
 		}
 
-		ctx := context.WithValue(r.Context(), "user_id", userID)
-		next(w, r.WithContext(ctx))
+		c.Set("user_id", userID)
+		c.Next()
 	}
-}
-
-func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		origin := r.Header.Get("Origin")
-		if origin == "" {
-			origin = "*"
-		}
-
-		w.Header().Set("Access-Control-Allow-Origin", origin)
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, Accept, Origin")
-		w.Header().Set("Access-Control-Expose-Headers", "Content-Length, Content-Type")
-		w.Header().Set("Access-Control-Max-Age", "86400")
-
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
-}
-
-func respondJSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
-}
-
-func respondError(w http.ResponseWriter, status int, message string) {
-	respondJSON(w, status, map[string]string{"error": message})
 }
 
 func getEnv(key, fallback string) string {
