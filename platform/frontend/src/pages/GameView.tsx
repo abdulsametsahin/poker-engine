@@ -51,6 +51,18 @@ export const GameView: React.FC = () => {
   const currentPlayer = tableState?.players?.find(p => p.user_id === currentUserId);
   const isMyTurn = tableState?.current_turn === currentUserId;
 
+  // Debug logging
+  useEffect(() => {
+    if (tableState) {
+      console.log('Current User ID:', currentUserId);
+      console.log('Current Turn:', tableState.current_turn);
+      console.log('Is My Turn:', isMyTurn);
+      console.log('Current Player:', currentPlayer);
+      console.log('All Players:', tableState.players);
+      console.log('Table State:', tableState);
+    }
+  }, [tableState, currentUserId, isMyTurn, currentPlayer]);
+
   // Calculate bet limits
   const currentBet = tableState?.current_bet || 0;
   const playerBet = currentPlayer?.current_bet || 0;

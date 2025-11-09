@@ -3,6 +3,7 @@ import { Box, Stack, Typography } from '@mui/material';
 import { Avatar } from '../common/Avatar';
 import { Chip } from '../common/Chip';
 import { Badge } from '../common/Badge';
+import { PlayingCard } from './PlayingCard';
 import { COLORS, SPACING, TRANSITIONS, RADIUS } from '../../constants';
 import { Player } from '../../types';
 import { formatUsername } from '../../utils';
@@ -186,6 +187,30 @@ export const PlayerSeat: React.FC<PlayerSeatProps> = memo(({
 
         {/* Chips */}
         <Chip amount={player.chips} variant="default" size="small" />
+
+        {/* Player cards - show only for current user */}
+        {isCurrentUser && player.cards && player.cards.length > 0 && (
+          <Stack
+            direction="row"
+            spacing={0.5}
+            sx={{
+              position: 'absolute',
+              bottom: -30,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 10,
+            }}
+          >
+            {player.cards.map((card, idx) => (
+              <PlayingCard
+                key={idx}
+                card={typeof card === 'string' ? card : `${card.rank}${card.suit}`}
+                size="small"
+                dealAnimation={false}
+              />
+            ))}
+          </Stack>
+        )}
 
         {/* Current bet */}
         {player.current_bet > 0 && (

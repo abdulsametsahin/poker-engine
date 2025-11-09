@@ -5,7 +5,7 @@ export interface Player {
   seat_number: number;
   chips: number;
   current_bet: number;
-  cards?: Card[];
+  cards?: Card[] | string[]; // Can be Card objects or strings like "Ah", "Kd"
   folded: boolean;
   all_in: boolean;
   is_dealer: boolean;
