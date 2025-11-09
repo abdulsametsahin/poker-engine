@@ -32,10 +32,47 @@ var (
 	}
 )
 
+// Predefined table configurations
+type TablePreset struct {
+	MaxPlayers int
+	SmallBlind int
+	BigBlind   int
+	MinBuyIn   int
+	MaxBuyIn   int
+	Name       string
+}
+
+var tablePresets = map[string]TablePreset{
+	"headsup": {
+		MaxPlayers: 2,
+		SmallBlind: 5,
+		BigBlind:   10,
+		MinBuyIn:   100,
+		MaxBuyIn:   1000,
+		Name:       "Heads-Up",
+	},
+	"3player": {
+		MaxPlayers: 3,
+		SmallBlind: 10,
+		BigBlind:   20,
+		MinBuyIn:   200,
+		MaxBuyIn:   2000,
+		Name:       "3-Player",
+	},
+}
+
 type GameBridge struct {
-	mu      sync.RWMutex
-	tables  map[string]*engine.Table
-	clients map[string]*Client
+	mu              sync.RWMutex
+	tables          map[string]*engine.Table
+	clients         map[string]*Client
+	matchmakingMu   sync.Mutex
+	matchmakingQueue map[string][]string // gameMode -> []userIDs
+}
+
+type MatchmakingQueueEntry struct {
+	UserID   string
+	GameMode string
+	JoinedAt time.Time
 }
 
 type Client struct {
@@ -51,8 +88,9 @@ type WSMessage struct {
 }
 
 var bridge = &GameBridge{
-	tables:  make(map[string]*engine.Table),
-	clients: make(map[string]*Client),
+	tables:           make(map[string]*engine.Table),
+	clients:          make(map[string]*Client),
+	matchmakingQueue: make(map[string][]string),
 }
 
 func main() {
@@ -85,6 +123,8 @@ func main() {
 	r.HandleFunc("/api/tables", authMiddleware(handleCreateTable)).Methods("POST", "OPTIONS")
 	r.HandleFunc("/api/tables/{id}/join", authMiddleware(handleJoinTable)).Methods("POST", "OPTIONS")
 	r.HandleFunc("/api/matchmaking/join", authMiddleware(handleJoinMatchmaking)).Methods("POST", "OPTIONS")
+	r.HandleFunc("/api/matchmaking/status", authMiddleware(handleMatchmakingStatus)).Methods("GET", "OPTIONS")
+	r.HandleFunc("/api/matchmaking/leave", authMiddleware(handleLeaveMatchmaking)).Methods("POST", "OPTIONS")
 	r.HandleFunc("/ws", handleWebSocket)
 
 	port := getEnv("SERVER_PORT", "8080")
@@ -279,66 +319,232 @@ func handleJoinTable(w http.ResponseWriter, r *http.Request) {
 func handleJoinMatchmaking(w http.ResponseWriter, r *http.Request) {
 	userID := r.Context().Value("user_id").(string)
 
+	var req struct {
+		GameMode string `json:"game_mode"` // "headsup" or "3player"
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		req.GameMode = "headsup" // default
+	}
+
+	// Validate game mode
+	preset, ok := tablePresets[req.GameMode]
+	if !ok {
+		respondError(w, http.StatusBadRequest, "Invalid game mode")
+		return
+	}
+
+	// Check if user is already in queue
+	var existingCount int
+	database.QueryRow("SELECT COUNT(*) FROM matchmaking_queue WHERE user_id = ? AND status = 'waiting'", userID).Scan(&existingCount)
+	if existingCount > 0 {
+		respondError(w, http.StatusBadRequest, "Already in matchmaking queue")
+		return
+	}
+
+	// Add to database queue
 	_, err := database.Exec(`
-		INSERT INTO matchmaking_queue (user_id, game_type, status)
-		VALUES (?, 'cash', 'waiting')
-	`, userID)
+		INSERT INTO matchmaking_queue (user_id, game_type, status, min_buy_in, max_buy_in)
+		VALUES (?, 'cash', 'waiting', ?, ?)
+	`, userID, preset.MinBuyIn, preset.MaxBuyIn)
 
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to join matchmaking")
 		return
 	}
 
-	go processMatchmaking()
+	// Add to in-memory queue
+	bridge.matchmakingMu.Lock()
+	bridge.matchmakingQueue[req.GameMode] = append(bridge.matchmakingQueue[req.GameMode], userID)
+	queueSize := len(bridge.matchmakingQueue[req.GameMode])
+	bridge.matchmakingMu.Unlock()
 
-	respondJSON(w, http.StatusOK, map[string]string{"status": "queued"})
+	log.Printf("User %s joined %s matchmaking queue. Queue size: %d/%d", userID, req.GameMode, queueSize, preset.MaxPlayers)
+
+	// Process matchmaking if we have enough players
+	go processMatchmaking(req.GameMode)
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"status":       "queued",
+		"game_mode":    req.GameMode,
+		"queue_size":   queueSize,
+		"required":     preset.MaxPlayers,
+	})
 }
 
-func processMatchmaking() {
-	rows, _ := database.Query(`
-		SELECT user_id, username FROM matchmaking_queue mq
-		JOIN users u ON mq.user_id = u.id
-		WHERE mq.status = 'waiting'
-		ORDER BY mq.created_at ASC LIMIT 6
-	`)
-	defer rows.Close()
+func handleMatchmakingStatus(w http.ResponseWriter, r *http.Request) {
+	userID := r.Context().Value("user_id").(string)
 
+	var status, gameType string
+	var matchedTableID sql.NullString
+	err := database.QueryRow(`
+		SELECT mq.status, mq.game_type
+		FROM matchmaking_queue mq
+		WHERE mq.user_id = ? AND mq.status IN ('waiting', 'matched')
+		ORDER BY mq.created_at DESC LIMIT 1
+	`, userID).Scan(&status, &gameType)
+
+	if err == sql.ErrNoRows {
+		respondJSON(w, http.StatusOK, map[string]interface{}{"status": "not_queued"})
+		return
+	}
+
+	// Check if matched and find table
+	if status == "matched" {
+		database.QueryRow(`
+			SELECT ts.table_id FROM table_seats ts
+			WHERE ts.user_id = ? AND ts.left_at IS NULL
+			ORDER BY ts.joined_at DESC LIMIT 1
+		`, userID).Scan(&matchedTableID)
+	}
+
+	response := map[string]interface{}{
+		"status": status,
+	}
+
+	if matchedTableID.Valid {
+		response["table_id"] = matchedTableID.String
+	}
+
+	// Get queue size for waiting status
+	if status == "waiting" {
+		for gameMode, queue := range bridge.matchmakingQueue {
+			for _, qUserID := range queue {
+				if qUserID == userID {
+					response["game_mode"] = gameMode
+					response["queue_size"] = len(queue)
+					if preset, ok := tablePresets[gameMode]; ok {
+						response["required"] = preset.MaxPlayers
+					}
+					break
+				}
+			}
+		}
+	}
+
+	respondJSON(w, http.StatusOK, response)
+}
+
+func handleLeaveMatchmaking(w http.ResponseWriter, r *http.Request) {
+	userID := r.Context().Value("user_id").(string)
+
+	// Remove from database
+	database.Exec("UPDATE matchmaking_queue SET status = 'cancelled' WHERE user_id = ? AND status = 'waiting'", userID)
+
+	// Remove from in-memory queue
+	bridge.matchmakingMu.Lock()
+	for gameMode, queue := range bridge.matchmakingQueue {
+		for i, qUserID := range queue {
+			if qUserID == userID {
+				bridge.matchmakingQueue[gameMode] = append(queue[:i], queue[i+1:]...)
+				break
+			}
+		}
+	}
+	bridge.matchmakingMu.Unlock()
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "left"})
+}
+
+func processMatchmaking(gameMode string) {
+	preset, ok := tablePresets[gameMode]
+	if !ok {
+		log.Printf("Invalid game mode: %s", gameMode)
+		return
+	}
+
+	bridge.matchmakingMu.Lock()
+	queue := bridge.matchmakingQueue[gameMode]
+
+	// Only create match if we have exactly the required number of players
+	if len(queue) < preset.MaxPlayers {
+		bridge.matchmakingMu.Unlock()
+		log.Printf("Not enough players for %s: %d/%d", gameMode, len(queue), preset.MaxPlayers)
+		return
+	}
+
+	// Take the first MaxPlayers from the queue
+	matchedUserIDs := queue[:preset.MaxPlayers]
+	bridge.matchmakingQueue[gameMode] = queue[preset.MaxPlayers:]
+	bridge.matchmakingMu.Unlock()
+
+	log.Printf("Creating %s match with %d players", gameMode, len(matchedUserIDs))
+
+	// Get player info from database
 	type QueuedPlayer struct {
 		UserID   string
 		Username string
 	}
 	var players []QueuedPlayer
-	for rows.Next() {
+
+	for _, userID := range matchedUserIDs {
 		var p QueuedPlayer
-		rows.Scan(&p.UserID, &p.Username)
+		err := database.QueryRow("SELECT id, username FROM users WHERE id = ?", userID).Scan(&p.UserID, &p.Username)
+		if err != nil {
+			log.Printf("Failed to get user info for %s: %v", userID, err)
+			continue
+		}
 		players = append(players, p)
 	}
 
-	if len(players) >= 2 {
-		tableID := uuid.New().String()
-		database.Exec(`
-			INSERT INTO tables (id, name, game_type, status, small_blind, big_blind, max_players, min_buy_in, max_buy_in)
-			VALUES (?, ?, 'cash', 'waiting', 10, 20, 6, 100, 2000)
-		`, tableID, fmt.Sprintf("Table %s", tableID[:8]))
-
-		createEngineTable(tableID, "cash", 10, 20, 6, 100, 2000)
-
-		for i, player := range players {
-			database.Exec(`
-				INSERT INTO table_seats (table_id, user_id, seat_number, chips, status)
-				VALUES (?, ?, ?, 1000, 'active')
-			`, tableID, player.UserID, i)
-
-			database.Exec(`
-				UPDATE matchmaking_queue SET status = 'matched', matched_at = NOW()
-				WHERE user_id = ?
-			`, player.UserID)
-
-			database.Exec("UPDATE users SET chips = chips - 1000 WHERE id = ?", player.UserID)
-
-			addPlayerToEngine(tableID, player.UserID, player.Username, i, 1000)
-		}
+	if len(players) < preset.MaxPlayers {
+		log.Printf("Not enough valid players, aborting match creation")
+		return
 	}
+
+	// Create table
+	tableID := uuid.New().String()
+	tableName := fmt.Sprintf("%s - %s", preset.Name, tableID[:8])
+
+	_, err := database.Exec(`
+		INSERT INTO tables (id, name, game_type, status, small_blind, big_blind, max_players, min_buy_in, max_buy_in)
+		VALUES (?, ?, 'cash', 'waiting', ?, ?, ?, ?, ?)
+	`, tableID, tableName, preset.SmallBlind, preset.BigBlind, preset.MaxPlayers, preset.MinBuyIn, preset.MaxBuyIn)
+
+	if err != nil {
+		log.Printf("Failed to create table: %v", err)
+		return
+	}
+
+	createEngineTable(tableID, "cash", preset.SmallBlind, preset.BigBlind, preset.MaxPlayers, preset.MinBuyIn, preset.MaxBuyIn)
+
+	// Add players to table
+	buyIn := preset.MinBuyIn
+	for i, player := range players {
+		database.Exec(`
+			INSERT INTO table_seats (table_id, user_id, seat_number, chips, status)
+			VALUES (?, ?, ?, ?, 'active')
+		`, tableID, player.UserID, i, buyIn)
+
+		database.Exec(`
+			UPDATE matchmaking_queue SET status = 'matched', matched_at = NOW()
+			WHERE user_id = ? AND status = 'waiting'
+		`, player.UserID)
+
+		database.Exec("UPDATE users SET chips = chips - ? WHERE id = ?", buyIn, player.UserID)
+
+		addPlayerToEngine(tableID, player.UserID, player.Username, i, buyIn)
+
+		// Notify player via WebSocket that match is found
+		bridge.mu.RLock()
+		if client, ok := bridge.clients[player.UserID]; ok {
+			msg := WSMessage{
+				Type: "match_found",
+				Payload: map[string]interface{}{
+					"table_id":  tableID,
+					"game_mode": gameMode,
+				},
+			}
+			data, _ := json.Marshal(msg)
+			select {
+			case client.Send <- data:
+			default:
+			}
+		}
+		bridge.mu.RUnlock()
+	}
+
+	log.Printf("Match created! Table: %s, Players: %d", tableID, len(players))
 }
 
 func createEngineTable(tableID, gameType string, smallBlind, bigBlind, maxPlayers, minBuyIn, maxBuyIn int) {
@@ -464,8 +670,14 @@ func handleEngineEvent(tableID string, event pokerModels.Event) {
 			}
 		}()
 
-	case "playerAction", "roundAdvanced", "cardDealt":
+	case "playerAction", "roundAdvanced":
+		// Broadcast on significant events only
 		broadcastTableState(tableID)
+
+	case "cardDealt":
+		// Don't broadcast on every card dealt to reduce message frequency
+		// The next playerAction or roundAdvanced will trigger a broadcast
+		log.Printf("Card dealt on table %s (skipping broadcast)", tableID)
 	}
 }
 

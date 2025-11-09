@@ -10,9 +10,17 @@ import {
   Stack,
   AppBar,
   Toolbar,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  CircularProgress,
+  LinearProgress,
+  Alert,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { tableAPI, matchmakingAPI } from '../services/api';
+import { useWebSocket } from '../hooks/useWebSocket';
 
 interface Table {
   id: string;
@@ -29,8 +37,15 @@ interface Table {
 
 export const Lobby: React.FC = () => {
   const navigate = useNavigate();
+  const { isConnected, lastMessage } = useWebSocket();
   const [tables, setTables] = useState<Table[]>([]);
   const [loading, setLoading] = useState(false);
+  const [matchmaking, setMatchmaking] = useState<{
+    active: boolean;
+    gameMode: string;
+    queueSize: number;
+    required: number;
+  } | null>(null);
 
   const loadTables = async () => {
     try {
@@ -47,6 +62,15 @@ export const Lobby: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  // Listen for match_found WebSocket event
+  useEffect(() => {
+    if (lastMessage && lastMessage.type === 'match_found') {
+      const { table_id } = lastMessage.payload;
+      setMatchmaking(null);
+      navigate(`/game/${table_id}`);
+    }
+  }, [lastMessage, navigate]);
+
   const handleJoinTable = async (tableId: string, minBuyIn: number) => {
     try {
       setLoading(true);
@@ -60,17 +84,31 @@ export const Lobby: React.FC = () => {
     }
   };
 
-  const handleQuickMatch = async () => {
+  const handleQuickMatch = async (gameMode: string) => {
     try {
       setLoading(true);
-      const response = await matchmakingAPI.join();
-      const tableId = response.data.table_id;
-      navigate(`/game/${tableId}`);
-    } catch (error) {
+      const response = await matchmakingAPI.join(gameMode);
+      const { queue_size, required } = response.data;
+      setMatchmaking({
+        active: true,
+        gameMode,
+        queueSize: queue_size,
+        required,
+      });
+    } catch (error: any) {
       console.error('Matchmaking failed:', error);
-      alert('Matchmaking failed');
+      alert(error.response?.data?.error || 'Matchmaking failed');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCancelMatchmaking = async () => {
+    try {
+      await matchmakingAPI.leave();
+      setMatchmaking(null);
+    } catch (error) {
+      console.error('Failed to leave matchmaking:', error);
     }
   };
 
@@ -94,24 +132,59 @@ export const Lobby: React.FC = () => {
 
       <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
         <Stack spacing={3}>
-          <Box sx={{ textAlign: 'center' }}>
-            <Button
-              variant="contained"
-              color="primary"
-              size="large"
-              onClick={handleQuickMatch}
-              disabled={loading}
-              sx={{ minWidth: 200 }}
-            >
+          <Box>
+            <Typography variant="h5" gutterBottom sx={{ mb: 2 }}>
               Quick Match
-            </Button>
-            <Typography variant="caption" display="block" sx={{ mt: 1, color: 'text.secondary' }}>
-              Join a random table instantly
             </Typography>
+            <Stack direction="row" spacing={2} justifyContent="center">
+              <Card sx={{ minWidth: 250 }}>
+                <CardContent>
+                  <Typography variant="h6" gutterBottom>
+                    Heads-Up
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    1 vs 1 poker<br />
+                    Blinds: $5/$10<br />
+                    Buy-in: $100-$1000
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    fullWidth
+                    onClick={() => handleQuickMatch('headsup')}
+                    disabled={loading || matchmaking !== null}
+                  >
+                    Find Match
+                  </Button>
+                </CardContent>
+              </Card>
+
+              <Card sx={{ minWidth: 250 }}>
+                <CardContent>
+                  <Typography variant="h6" gutterBottom>
+                    3-Player
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    3-way poker<br />
+                    Blinds: $10/$20<br />
+                    Buy-in: $200-$2000
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    color="secondary"
+                    fullWidth
+                    onClick={() => handleQuickMatch('3player')}
+                    disabled={loading || matchmaking !== null}
+                  >
+                    Find Match
+                  </Button>
+                </CardContent>
+              </Card>
+            </Stack>
           </Box>
 
           <Typography variant="h5" gutterBottom>
-            Available Tables
+            Active Tables
           </Typography>
 
           <Box
@@ -125,19 +198,36 @@ export const Lobby: React.FC = () => {
               gap: 3,
             }}
           >
-            {tables.map((table) => (
-              <Card key={table.id} sx={{ height: '100%' }}>
+            {tables.filter(t => t.status === 'playing' || t.current_players > 0).map((table) => (
+              <Card
+                key={table.id}
+                sx={{
+                  height: '100%',
+                  border: table.status === 'playing' ? '2px solid' : 'none',
+                  borderColor: 'success.main',
+                }}
+              >
                 <CardContent>
                   <Stack spacing={2}>
                     <Box>
                       <Typography variant="h6" gutterBottom>
                         {table.name}
                       </Typography>
-                      <Chip
-                        label={table.status.toUpperCase()}
-                        size="small"
-                        color={table.status === 'waiting' ? 'success' : 'warning'}
-                      />
+                      <Stack direction="row" spacing={1}>
+                        <Chip
+                          label={table.status.toUpperCase()}
+                          size="small"
+                          color={table.status === 'playing' ? 'success' : 'warning'}
+                        />
+                        {table.status === 'playing' && (
+                          <Chip
+                            label="LIVE"
+                            size="small"
+                            color="error"
+                            sx={{ animation: 'pulse 2s infinite' }}
+                          />
+                        )}
+                      </Stack>
                     </Box>
 
                     <Box>
@@ -175,6 +265,45 @@ export const Lobby: React.FC = () => {
           )}
         </Stack>
       </Container>
+
+      {/* Matchmaking Dialog */}
+      <Dialog open={matchmaking !== null} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          Finding {matchmaking?.gameMode === 'headsup' ? 'Heads-Up' : '3-Player'} Match
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={3} sx={{ py: 2 }}>
+            <Box sx={{ textAlign: 'center' }}>
+              <CircularProgress size={60} />
+            </Box>
+
+            <Box>
+              <Typography variant="body1" gutterBottom align="center">
+                Waiting for players...
+              </Typography>
+              <Typography variant="h6" align="center" color="primary" sx={{ my: 2 }}>
+                {matchmaking?.queueSize} / {matchmaking?.required} players
+              </Typography>
+              <LinearProgress
+                variant="determinate"
+                value={((matchmaking?.queueSize || 0) / (matchmaking?.required || 1)) * 100}
+                sx={{ height: 8, borderRadius: 4 }}
+              />
+            </Box>
+
+            {!isConnected && (
+              <Alert severity="warning">
+                WebSocket disconnected. Reconnecting...
+              </Alert>
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCancelMatchmaking} color="error">
+            Cancel
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
