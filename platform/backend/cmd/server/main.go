@@ -214,7 +214,16 @@ func handleCreateTable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	createEngineTable(table.ID, table.GameType, table.SmallBlind, table.BigBlind, table.MaxPlayers, table.MinBuyIn, table.MaxBuyIn)
+	minBuyIn := 100
+	if table.MinBuyIn != nil {
+		minBuyIn = *table.MinBuyIn
+	}
+	maxBuyIn := 2000
+	if table.MaxBuyIn != nil {
+		maxBuyIn = *table.MaxBuyIn
+	}
+
+	createEngineTable(table.ID, table.GameType, table.SmallBlind, table.BigBlind, table.MaxPlayers, minBuyIn, maxBuyIn)
 
 	respondJSON(w, http.StatusCreated, table)
 }
