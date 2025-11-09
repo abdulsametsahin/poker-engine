@@ -1,0 +1,43 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+poker-engine
+poker-platform
+
+# Test binary
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Go workspace file
+go.work
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+
+# Platform specific
+platform/backend/.env
+platform/frontend/node_modules/
+platform/frontend/build/
+platform/frontend/.env.local
+platform/frontend/.env.development.local
+platform/frontend/.env.test.local
+platform/frontend/.env.production.local
+
+# Logs
+*.log
