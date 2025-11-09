@@ -675,34 +675,39 @@ func handleEngineEvent(tableID string, event pokerModels.Event) {
 		log.Printf("Game complete on table %s", tableID)
 		broadcastTableState(tableID)
 
-		// Notify all clients about game completion
-		data, ok := event.Data.(map[string]interface{})
-		if ok {
-			gameCompleteMsg := WSMessage{
-				Type: "game_complete",
-				Payload: map[string]interface{}{
-					"winner":       data["winner"],
-					"winnerName":   data["winnerName"],
-					"finalChips":   data["finalChips"],
-					"totalPlayers": data["totalPlayers"],
-					"message":      "Game Over! Winner takes all!",
-				},
-			}
+		// Send game complete message after a short delay to ensure hand winner is shown first
+		go func() {
+			time.Sleep(3 * time.Second)
 
-			msgData, _ := json.Marshal(gameCompleteMsg)
+			data, ok := event.Data.(map[string]interface{})
+			if ok {
+				gameCompleteMsg := WSMessage{
+					Type: "game_complete",
+					Payload: map[string]interface{}{
+						"winner":       data["winner"],
+						"winnerName":   data["winnerName"],
+						"finalChips":   data["finalChips"],
+						"totalPlayers": data["totalPlayers"],
+						"message":      "Game Over! Winner takes all!",
+					},
+				}
 
-			bridge.mu.RLock()
-			for _, client := range bridge.clients {
-				if client.TableID == tableID {
-					select {
-					case client.Send <- msgData:
-					default:
-						close(client.Send)
+				msgData, _ := json.Marshal(gameCompleteMsg)
+
+				bridge.mu.RLock()
+				for _, client := range bridge.clients {
+					if client.TableID == tableID {
+						select {
+						case client.Send <- msgData:
+						default:
+							close(client.Send)
+						}
 					}
 				}
+				bridge.mu.RUnlock()
+				log.Printf("Game complete message sent for table %s", tableID)
 			}
-			bridge.mu.RUnlock()
-		}
+		}()
 
 	case "playerAction", "roundAdvanced":
 		// Broadcast on significant events only

@@ -75,6 +75,8 @@ export const GameView: React.FC = () => {
 
   useEffect(() => {
     if (lastMessage) {
+      console.log('Received message:', lastMessage.type, lastMessage.payload);
+
       switch (lastMessage.type) {
         case 'table_state':
         case 'game_update':
@@ -110,6 +112,7 @@ export const GameView: React.FC = () => {
 
         case 'game_complete':
           // Game is completely over - show game complete modal
+          console.log('Game complete detected!', lastMessage.payload);
           setGameComplete({
             winner: lastMessage.payload.winner,
             winnerName: lastMessage.payload.winnerName,
@@ -119,6 +122,9 @@ export const GameView: React.FC = () => {
           });
           setShowWinners(false); // Hide hand winner modal if showing
           break;
+
+        default:
+          console.log('Unknown message type:', lastMessage.type);
       }
     }
   }, [lastMessage, tableId, tableState?.status]);
@@ -152,8 +158,8 @@ export const GameView: React.FC = () => {
 
   return (
     <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', bgcolor: 'grey.100' }}>
-      {/* Game Complete Modal */}
-      {gameComplete && (
+      {/* Game Complete Modal - Takes priority over winner modal */}
+      {gameComplete ? (
         <GameCompleteDisplay
           winner={gameComplete.winner}
           winnerName={gameComplete.winnerName}
@@ -162,12 +168,9 @@ export const GameView: React.FC = () => {
           message={gameComplete.message}
           currentUserId={currentUserId}
         />
-      )}
-
-      {/* Winner Display Modal */}
-      {showWinners && tableState?.winners && !gameComplete && (
+      ) : showWinners && tableState?.winners ? (
         <WinnerDisplay winners={tableState.winners} onClose={handleCloseWinners} />
-      )}
+      ) : null}
 
       {/* Main Game Area */}
       <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
