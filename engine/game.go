@@ -325,6 +325,29 @@ func (g *Game) completeHand() {
 			Data:    models.HandCompleteEvent{Winners: g.table.Winners},
 		})
 	}
+
+	// Check if game is complete (only one player with chips left)
+	playersWithChips := 0
+	var lastPlayerStanding *models.Player
+	for _, p := range g.table.Players {
+		if p != nil && p.Chips > 0 {
+			playersWithChips++
+			lastPlayerStanding = p
+		}
+	}
+
+	if playersWithChips == 1 && lastPlayerStanding != nil && g.onEvent != nil {
+		g.onEvent(models.Event{
+			Event:   "gameComplete",
+			TableID: g.table.TableID,
+			Data: map[string]interface{}{
+				"winner":       lastPlayerStanding.PlayerID,
+				"winnerName":   lastPlayerStanding.PlayerName,
+				"finalChips":   lastPlayerStanding.Chips,
+				"totalPlayers": len(g.table.Players),
+			},
+		})
+	}
 }
 
 func (g *Game) isBettingRoundComplete() bool {

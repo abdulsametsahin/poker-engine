@@ -1,6 +1,6 @@
 import React from 'react';
-import { Box, Paper, Typography, Stack, Chip, Avatar, Badge } from '@mui/material';
-import { AccountCircle, AttachMoney } from '@mui/icons-material';
+import { Box, Paper, Typography, Stack, Chip, Avatar, Badge, CircularProgress } from '@mui/material';
+import { AccountCircle, AttachMoney, HourglassEmpty } from '@mui/icons-material';
 import PlayingCard from './PlayingCard';
 import ActionTimer from './ActionTimer';
 
@@ -15,6 +15,18 @@ interface Player {
   is_dealer?: boolean;
 }
 
+interface CardObject {
+  rank: string;
+  suit: string;
+}
+
+interface Winner {
+  playerId: string;
+  amount: number;
+  handRank: string;
+  handCards: (string | CardObject)[];
+}
+
 interface TableState {
   table_id?: string;
   players: Player[];
@@ -25,6 +37,7 @@ interface TableState {
   betting_round?: string;
   current_bet?: number;
   action_deadline?: string;
+  winners?: Winner[];
 }
 
 interface PokerTableProps {
@@ -161,7 +174,7 @@ const PlayerSeat: React.FC<{
         />
 
         {/* Current Bet */}
-        {player.bet && player.bet > 0 && (
+        {player.bet !== undefined && player.bet > 0 && (
           <Chip
             label={`Bet: $${player.bet}`}
             size="small"
@@ -233,7 +246,7 @@ const PokerTable: React.FC<PokerTableProps> = ({ tableState }) => {
           </Stack>
 
           {/* Current Turn Indicator */}
-          {currentTurn && (
+          {currentTurn && tableState.status === 'playing' && (
             <Box
               sx={{
                 p: 1.5,
@@ -264,6 +277,44 @@ const PokerTable: React.FC<PokerTableProps> = ({ tableState }) => {
                     sx={{ fontWeight: 'bold' }}
                   />
                 )}
+              </Stack>
+            </Box>
+          )}
+
+          {/* Waiting for Game to Start */}
+          {tableState.status === 'waiting' && (
+            <Box
+              sx={{
+                p: 2,
+                bgcolor: 'info.light',
+                borderRadius: 1,
+                textAlign: 'center',
+              }}
+            >
+              <Stack direction="row" spacing={2} alignItems="center" justifyContent="center">
+                <CircularProgress size={24} />
+                <Typography variant="body1" fontWeight="bold">
+                  Waiting for game to start... ({players.length} player{players.length !== 1 ? 's' : ''} at table)
+                </Typography>
+              </Stack>
+            </Box>
+          )}
+
+          {/* Hand Complete - Waiting for Next Round */}
+          {tableState.status === 'handComplete' && (
+            <Box
+              sx={{
+                p: 2,
+                bgcolor: 'success.light',
+                borderRadius: 1,
+                textAlign: 'center',
+              }}
+            >
+              <Stack direction="row" spacing={2} alignItems="center" justifyContent="center">
+                <HourglassEmpty sx={{ animation: 'spin 2s linear infinite', '@keyframes spin': { '0%': { transform: 'rotate(0deg)' }, '100%': { transform: 'rotate(360deg)' } } }} />
+                <Typography variant="body1" fontWeight="bold">
+                  Hand complete! Starting next round...
+                </Typography>
               </Stack>
             </Box>
           )}

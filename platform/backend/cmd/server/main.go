@@ -670,6 +670,40 @@ func handleEngineEvent(tableID string, event pokerModels.Event) {
 			}
 		}()
 
+	case "gameComplete":
+		// Game is over - only one player left
+		log.Printf("Game complete on table %s", tableID)
+		broadcastTableState(tableID)
+
+		// Notify all clients about game completion
+		data, ok := event.Data.(map[string]interface{})
+		if ok {
+			gameCompleteMsg := WSMessage{
+				Type: "game_complete",
+				Payload: map[string]interface{}{
+					"winner":       data["winner"],
+					"winnerName":   data["winnerName"],
+					"finalChips":   data["finalChips"],
+					"totalPlayers": data["totalPlayers"],
+					"message":      "Game Over! Winner takes all!",
+				},
+			}
+
+			msgData, _ := json.Marshal(gameCompleteMsg)
+
+			bridge.mu.RLock()
+			for _, client := range bridge.clients {
+				if client.TableID == tableID {
+					select {
+					case client.Send <- msgData:
+					default:
+						close(client.Send)
+					}
+				}
+			}
+			bridge.mu.RUnlock()
+		}
+
 	case "playerAction", "roundAdvanced":
 		// Broadcast on significant events only
 		broadcastTableState(tableID)
@@ -843,8 +877,13 @@ func sendTableState(c *Client, tableID string) {
 	}
 
 	// Add action deadline if there's an active player
-	if state.CurrentHand != nil && !state.CurrentHand.ActionDeadline.IsZero() {
+	if state.CurrentHand != nil && state.CurrentHand.ActionDeadline != nil && !state.CurrentHand.ActionDeadline.IsZero() {
 		payload["action_deadline"] = state.CurrentHand.ActionDeadline.Format(time.RFC3339)
+	}
+
+	// Add winners if hand is complete
+	if state.Status == pokerModels.StatusHandComplete && len(state.Winners) > 0 {
+		payload["winners"] = state.Winners
 	}
 
 	sendToClient(c, WSMessage{
@@ -975,8 +1014,13 @@ func broadcastTableState(tableID string) {
 			}
 
 			// Add action deadline if there's an active player
-			if state.CurrentHand != nil && !state.CurrentHand.ActionDeadline.IsZero() {
+			if state.CurrentHand != nil && state.CurrentHand.ActionDeadline != nil && !state.CurrentHand.ActionDeadline.IsZero() {
 				payload["action_deadline"] = state.CurrentHand.ActionDeadline.Format(time.RFC3339)
+			}
+
+			// Add winners if hand is complete
+			if state.Status == pokerModels.StatusHandComplete && len(state.Winners) > 0 {
+				payload["winners"] = state.Winners
 			}
 
 			msg := WSMessage{
