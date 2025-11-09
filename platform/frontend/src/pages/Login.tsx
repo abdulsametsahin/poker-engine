@@ -40,7 +40,7 @@ export const Login: React.FC = () => {
 
     try {
       const response = await authAPI.login(loginData);
-      authLogin(response.data.token, response.data.user_id, loginData.username);
+      authLogin(response.data.token, response.data.user.id, response.data.user.username);
       showSuccess('Welcome back to PokerStreet!');
       navigate(ROUTES.LOBBY);
     } catch (err: any) {
@@ -84,7 +84,7 @@ export const Login: React.FC = () => {
         email: registerData.email,
         password: registerData.password,
       });
-      authLogin(response.data.token, response.data.user_id, registerData.username);
+      authLogin(response.data.token, response.data.user.id, response.data.user.username);
       showSuccess('Welcome to PokerStreet!');
       navigate(ROUTES.LOBBY);
     } catch (err: any) {
