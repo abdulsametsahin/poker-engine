@@ -77,10 +77,12 @@ func (g *Game) StartNewHand() error {
 			p.Bet = 0
 			p.HasActedThisRound = false
 			p.LastAction = ""
+			p.LastActionAmount = 0
 			p.IsDealer = false
 			p.IsSmallBlind = false
 			p.IsBigBlind = false
 			p.Cards = nil
+			p.TotalInvestedThisHand = 0
 		}
 	}
 
@@ -319,8 +321,9 @@ func (g *Game) advanceToNextRound() {
 		}
 	}
 
-	// Reset current bet for new round
+	// Reset current bet and min raise for new round
 	g.table.CurrentHand.CurrentBet = 0
+	g.table.CurrentHand.MinRaise = g.table.Config.BigBlind
 
 	activePlayers := 0
 	playersNotAllIn := 0
