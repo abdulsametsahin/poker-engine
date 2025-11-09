@@ -4,6 +4,7 @@ import { Avatar } from '../common/Avatar';
 import { Chip } from '../common/Chip';
 import { Badge } from '../common/Badge';
 import { PlayingCard } from './PlayingCard';
+import ActionTimer from '../ActionTimer';
 import { COLORS, SPACING, TRANSITIONS, RADIUS } from '../../constants';
 import { Player } from '../../types';
 import { formatUsername } from '../../utils';
@@ -116,29 +117,20 @@ export const PlayerSeat: React.FC<PlayerSeatProps> = memo(({
           gap: 1,
         }}
       >
-        {/* Timer arc */}
+        {/* Action Timer */}
         {isActive && actionDeadline && (
           <Box
             sx={{
               position: 'absolute',
-              top: -2,
-              left: -2,
-              right: -2,
-              bottom: -2,
-              borderRadius: RADIUS.md,
-              border: `3px solid ${COLORS.warning.main}`,
-              '@keyframes rotate-border': {
-                '0%': {
-                  clipPath: 'polygon(0 0, 100% 0, 100% 100%, 0 100%)',
-                },
-                '100%': {
-                  clipPath: 'polygon(0 0, 0 0, 0 100%, 0 100%)',
-                },
-              },
-              animation: 'rotate-border 30s linear',
-              pointerEvents: 'none',
+              top: -32,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: '110%',
+              zIndex: 30,
             }}
-          />
+          >
+            <ActionTimer deadline={actionDeadline} totalTime={30} />
+          </Box>
         )}
 
         {/* Status badges */}
