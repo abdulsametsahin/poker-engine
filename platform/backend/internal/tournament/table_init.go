@@ -46,14 +46,26 @@ func (ti *TableInitializer) BuildEngineTable(table models.Table, seats []models.
 		return nil, fmt.Errorf("cannot create table with no players")
 	}
 
+	// Get tournament to fetch starting chips
+	var tournament models.Tournament
+	startingChips := 0
+	if table.TournamentID != nil {
+		if err := ti.db.Where("id = ?", *table.TournamentID).First(&tournament).Error; err == nil {
+			startingChips = tournament.StartingChips
+		} else {
+			log.Printf("Warning: could not fetch tournament %s: %v", *table.TournamentID, err)
+		}
+	}
+
 	// Create table configuration
 	config := pokerModels.TableConfig{
-		SmallBlind:    table.SmallBlind,
-		BigBlind:      table.BigBlind,
-		MaxPlayers:    table.MaxPlayers,
-		MinBuyIn:      0,  // Not used in tournaments
-		MaxBuyIn:      0,  // Not used in tournaments
-		ActionTimeout: 30, // 30 seconds default
+		SmallBlind:     table.SmallBlind,
+		BigBlind:       table.BigBlind,
+		MaxPlayers:     table.MaxPlayers,
+		MinBuyIn:       0,  // Not used in tournaments
+		MaxBuyIn:       0,  // Not used in tournaments
+		StartingChips:  startingChips,
+		ActionTimeout:  30, // 30 seconds default
 	}
 
 	// Create engine table
@@ -80,7 +92,7 @@ func (ti *TableInitializer) BuildEngineTable(table models.Table, seats []models.
 		engineTable.Players[seat.SeatNumber] = player
 	}
 
-	log.Printf("Built engine table %s with %d players (tournament)", table.ID, len(seats))
+	log.Printf("Built engine table %s with %d players (tournament, starting chips: %d)", table.ID, len(seats), startingChips)
 
 	return engineTable, nil
 }
