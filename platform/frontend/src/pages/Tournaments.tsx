@@ -76,7 +76,8 @@ export const Tournaments: React.FC = () => {
   const fetchTournaments = async () => {
     try {
       const response = await tournamentAPI.getTournaments();
-      setTournaments(response.data.tournaments || []);
+      // Backend returns array directly, not wrapped in { tournaments: [...] }
+      setTournaments(Array.isArray(response.data) ? response.data : []);
     } catch (error: any) {
       console.error('Failed to fetch tournaments:', error);
     } finally {
@@ -92,8 +93,8 @@ export const Tournaments: React.FC = () => {
       setCreateDialogOpen(false);
       fetchTournaments();
 
-      // Show the tournament code
-      const tournament = response.data.tournament;
+      // Show the tournament code (backend returns tournament directly)
+      const tournament = response.data;
       showSuccess(`Tournament Code: ${tournament.tournament_code} - Share this code with players!`);
     } catch (error: any) {
       showError(error.response?.data?.error || 'Failed to create tournament');
