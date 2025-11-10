@@ -450,5 +450,37 @@ func (g *Game) stopActionTimer() {
 }
 
 func (g *Game) HandleTimeout(playerID string) error {
-	return g.ProcessAction(playerID, models.ActionFold, 0)
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	// Check if game is in progress
+	if g.table.Status != models.StatusPlaying {
+		return nil // Game not in progress, ignore timeout
+	}
+
+	// Check if it's actually this player's turn
+	currentPos := g.table.CurrentHand.CurrentPosition
+	if currentPos < 0 || currentPos >= len(g.table.Players) {
+		return nil // Invalid position, ignore
+	}
+
+	currentPlayer := g.table.Players[currentPos]
+	if currentPlayer == nil || currentPlayer.PlayerID != playerID {
+		return nil // Not this player's turn anymore, ignore
+	}
+
+	// Auto-fold the player
+	currentPlayer.Status = models.StatusFolded
+	currentPlayer.LastAction = models.ActionFold
+	currentPlayer.LastActionAmount = 0
+	currentPlayer.HasActedThisRound = true
+
+	// Check if betting round is complete
+	if g.isBettingRoundComplete() {
+		g.advanceToNextRound()
+	} else {
+		g.moveToNextPlayer()
+	}
+
+	return nil
 }
