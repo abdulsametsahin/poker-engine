@@ -134,6 +134,24 @@ export const Tournaments: React.FC = () => {
     showSuccess('Tournament code copied to clipboard!');
   };
 
+  const getStructureName = (structureJson: string): string => {
+    try {
+      const parsed = JSON.parse(structureJson);
+      return parsed.name || 'Unknown';
+    } catch {
+      return 'Unknown';
+    }
+  };
+
+  const getPrizeStructureName = (prizeStructureJson: string): string => {
+    try {
+      const parsed = JSON.parse(prizeStructureJson);
+      return parsed.name || 'Unknown';
+    } catch {
+      return 'Unknown';
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'registering':
@@ -233,7 +251,7 @@ export const Tournaments: React.FC = () => {
                           Structure
                         </Typography>
                         <Typography variant="body1" fontWeight={600}>
-                          {tournament.structure.charAt(0).toUpperCase() + tournament.structure.slice(1)}
+                          {getStructureName(tournament.structure)}
                         </Typography>
                       </Box>
                     </Box>
