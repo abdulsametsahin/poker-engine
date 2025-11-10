@@ -281,6 +281,7 @@ export const STORAGE_KEYS = {
   AUTH_TOKEN: 'poker_auth_token',
   USER_ID: 'poker_user_id',
   USERNAME: 'poker_username',
+  USER_DATA: 'poker_user_data',
   THEME: 'poker_theme',
   SETTINGS: 'poker_settings',
 } as const;

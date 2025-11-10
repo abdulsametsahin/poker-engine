@@ -183,17 +183,8 @@ export const GameView: React.FC = () => {
       type: 'game_action',
       payload: { action, amount: amount || 0 },
     });
-
-    // Add to history
-    const playerName = currentPlayer?.username || user?.username || 'You';
-    setHistory(prev => [...prev, {
-      id: Date.now().toString(),
-      playerName,
-      action,
-      amount,
-      timestamp: new Date(),
-    }]);
-  }, [sendMessage, currentPlayer, user]);
+    // Note: History will be updated automatically when state changes are received
+  }, [sendMessage]);
 
   const handleSendChatMessage = useCallback((message: string) => {
     // For now, just add to local state
