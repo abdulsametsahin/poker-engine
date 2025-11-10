@@ -26,12 +26,14 @@ import (
 )
 
 var (
-	database          *db.DB
-	authService       *auth.Service
-	tournamentService *tournament.Service
-	tournamentStarter *tournament.Starter
-	blindManager      *tournament.BlindManager
-	upgrader          = websocket.Upgrader{
+	database            *db.DB
+	authService         *auth.Service
+	tournamentService   *tournament.Service
+	tournamentStarter   *tournament.Starter
+	blindManager        *tournament.BlindManager
+	eliminationTracker  *tournament.EliminationTracker
+	consolidator        *tournament.Consolidator
+	upgrader            = websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool { return true },
 	}
 )
@@ -127,6 +129,8 @@ func main() {
 	tournamentService = tournament.NewService(database.DB)
 	tournamentStarter = tournament.NewStarter(database.DB, tournamentService)
 	blindManager = tournament.NewBlindManager(database.DB)
+	eliminationTracker = tournament.NewEliminationTracker(database.DB)
+	consolidator = tournament.NewConsolidator(database.DB)
 
 	// Set callback for when tournaments start automatically
 	tournamentStarter.SetOnStartCallback(func(tournamentID string) {
@@ -138,6 +142,21 @@ func main() {
 	blindManager.SetOnBlindIncreaseCallback(func(tournamentID string, newLevel models.BlindLevel) {
 		go updateTournamentTableBlinds(tournamentID, newLevel)
 		go broadcastBlindIncrease(tournamentID, newLevel)
+	})
+
+	// Set callback for player elimination
+	eliminationTracker.SetOnPlayerEliminatedCallback(func(tournamentID, userID string, position int) {
+		go handlePlayerElimination(tournamentID, userID, position)
+	})
+
+	// Set callback for tournament completion
+	eliminationTracker.SetOnTournamentCompleteCallback(func(tournamentID string) {
+		go handleTournamentComplete(tournamentID)
+	})
+
+	// Set callback for table consolidation
+	consolidator.SetOnConsolidationCallback(func(tournamentID string) {
+		go handleTableConsolidation(tournamentID)
 	})
 
 	// Start tournament services in background
@@ -1734,11 +1753,64 @@ func handleTournamentEngineEvent(tableID string, event pokerModels.Event) {
 		log.Printf("Hand started on tournament table %s", tableID)
 	case "handComplete":
 		log.Printf("Hand completed on tournament table %s", tableID)
+		// Check for player eliminations
+		go checkTournamentEliminations(tableID)
 	case "gameComplete":
 		handleTournamentTableComplete(tableID)
 	}
 
 	broadcastTableState(tableID)
+}
+
+func checkTournamentEliminations(tableID string) {
+	// Get table state
+	bridge.mu.RLock()
+	table, exists := bridge.tables[tableID]
+	bridge.mu.RUnlock()
+
+	if !exists {
+		return
+	}
+
+	state := table.GetState()
+
+	// Get tournament ID for this table
+	var dbTable models.Table
+	if err := database.Where("id = ?", tableID).First(&dbTable).Error; err != nil {
+		return
+	}
+
+	if dbTable.TournamentID == nil {
+		return // Not a tournament table
+	}
+
+	tournamentID := *dbTable.TournamentID
+
+	// Check each player for elimination (chips = 0)
+	for _, player := range state.Players {
+		if player != nil && player.Chips == 0 && player.Status != pokerModels.StatusSittingOut {
+			// Player is eliminated
+			if err := eliminationTracker.EliminatePlayer(tournamentID, player.PlayerID); err != nil {
+				log.Printf("Error eliminating player %s: %v", player.PlayerID, err)
+			}
+		}
+	}
+
+	// Check if we should consolidate or balance tables
+	shouldConsolidate, _ := eliminationTracker.ShouldConsolidateTables(tournamentID)
+	if shouldConsolidate {
+		if err := consolidator.ConsolidateTables(tournamentID); err != nil {
+			log.Printf("Error consolidating tables: %v", err)
+		}
+	} else {
+		// Check if we should balance
+		shouldBalance, _ := eliminationTracker.ShouldBalanceTables(tournamentID)
+		if shouldBalance {
+			if err := consolidator.BalanceTables(tournamentID); err != nil {
+				log.Printf("Error balancing tables: %v", err)
+			}
+		}
+	}
 }
 
 func handleTournamentTableComplete(tableID string) {
@@ -1841,6 +1913,142 @@ func broadcastBlindIncrease(tournamentID string, newLevel models.BlindLevel) {
 
 	log.Printf("Broadcast blind increase for tournament %s: Level %d (%d/%d)",
 		tournamentID, tournament.CurrentLevel, newLevel.SmallBlind, newLevel.BigBlind)
+}
+
+func handlePlayerElimination(tournamentID, userID string, position int) {
+	// Get user info
+	var user models.User
+	if err := database.Where("id = ?", userID).First(&user).Error; err != nil {
+		return
+	}
+
+	// Get remaining player count
+	remainingCount, _ := eliminationTracker.GetRemainingPlayerCount(tournamentID)
+
+	// Check if final table
+	isFinalTable, _ := consolidator.IsFinalTable(tournamentID)
+
+	// Broadcast elimination
+	message := WSMessage{
+		Type: "player_eliminated",
+		Payload: map[string]interface{}{
+			"tournament_id":     tournamentID,
+			"user_id":           userID,
+			"username":          user.Username,
+			"position":          position,
+			"remaining_players": remainingCount,
+			"is_final_table":    isFinalTable,
+		},
+	}
+
+	data, _ := json.Marshal(message)
+
+	bridge.mu.RLock()
+	defer bridge.mu.RUnlock()
+
+	for _, client := range bridge.clients {
+		select {
+		case client.Send <- data:
+		default:
+		}
+	}
+
+	log.Printf("Tournament %s: Player %s eliminated in position %d (%d remaining)",
+		tournamentID, user.Username, position, remainingCount)
+}
+
+func handleTournamentComplete(tournamentID string) {
+	// Get final standings
+	standings, _ := eliminationTracker.GetTournamentStandings(tournamentID)
+
+	// Find winner
+	var winnerID, winnerName string
+	for _, player := range standings {
+		if player.Position != nil && *player.Position == 1 {
+			var user models.User
+			if err := database.Where("id = ?", player.UserID).First(&user).Error; err == nil {
+				winnerID = player.UserID
+				winnerName = user.Username
+			}
+			break
+		}
+	}
+
+	// Broadcast tournament complete
+	message := WSMessage{
+		Type: "tournament_complete",
+		Payload: map[string]interface{}{
+			"tournament_id": tournamentID,
+			"winner_id":     winnerID,
+			"winner_name":   winnerName,
+			"standings":     standings,
+		},
+	}
+
+	data, _ := json.Marshal(message)
+
+	bridge.mu.RLock()
+	defer bridge.mu.RUnlock()
+
+	for _, client := range bridge.clients {
+		select {
+		case client.Send <- data:
+		default:
+		}
+	}
+
+	log.Printf("Tournament %s: Completed! Winner: %s", tournamentID, winnerName)
+}
+
+func handleTableConsolidation(tournamentID string) {
+	// Reload tournament tables in the engine
+	// This will recreate tables with the new player assignments
+	go reinitializeTournamentTables(tournamentID)
+
+	// Broadcast table consolidation
+	message := WSMessage{
+		Type: "tables_consolidated",
+		Payload: map[string]interface{}{
+			"tournament_id": tournamentID,
+		},
+	}
+
+	data, _ := json.Marshal(message)
+
+	bridge.mu.RLock()
+	defer bridge.mu.RUnlock()
+
+	for _, client := range bridge.clients {
+		select {
+		case client.Send <- data:
+		default:
+		}
+	}
+
+	log.Printf("Tournament %s: Tables consolidated", tournamentID)
+}
+
+func reinitializeTournamentTables(tournamentID string) {
+	// Close old tables
+	tableInit := tournament.NewTableInitializer(database.DB)
+	tables, _ := tableInit.GetTournamentTables(tournamentID)
+
+	bridge.mu.Lock()
+	for _, table := range tables {
+		if existingTable, exists := bridge.tables[table.ID]; exists {
+			existingTable.Stop()
+			delete(bridge.tables, table.ID)
+		}
+	}
+	bridge.mu.Unlock()
+
+	// Small delay before reinitializing
+	time.Sleep(1 * time.Second)
+
+	// Reinitialize tables
+	initializeTournamentTables(tournamentID)
+
+	log.Printf("Tournament %s: Tables reinitialized after consolidation", tournamentID)
 }
 
 func broadcastTournamentStarted(tournamentID string) {
