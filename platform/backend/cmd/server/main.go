@@ -30,6 +30,7 @@ var (
 	authService       *auth.Service
 	tournamentService *tournament.Service
 	tournamentStarter *tournament.Starter
+	blindManager      *tournament.BlindManager
 	upgrader          = websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool { return true },
 	}
@@ -125,6 +126,7 @@ func main() {
 	authService = auth.NewService(getEnv("JWT_SECRET", "secret"))
 	tournamentService = tournament.NewService(database.DB)
 	tournamentStarter = tournament.NewStarter(database.DB, tournamentService)
+	blindManager = tournament.NewBlindManager(database.DB)
 
 	// Set callback for when tournaments start automatically
 	tournamentStarter.SetOnStartCallback(func(tournamentID string) {
@@ -132,8 +134,15 @@ func main() {
 		go broadcastTournamentStarted(tournamentID)
 	})
 
-	// Start tournament starter service in background
+	// Set callback for when blinds increase
+	blindManager.SetOnBlindIncreaseCallback(func(tournamentID string, newLevel models.BlindLevel) {
+		go updateTournamentTableBlinds(tournamentID, newLevel)
+		go broadcastBlindIncrease(tournamentID, newLevel)
+	})
+
+	// Start tournament services in background
 	go tournamentStarter.Start()
+	go blindManager.Start()
 
 	// Set Gin mode based on environment
 	if getEnv("ENV", "development") == "production" {
@@ -1759,6 +1768,79 @@ func handleTournamentTableComplete(tableID string) {
 	}
 
 	log.Printf("Tournament table %s complete. Winner: %s with %d chips", tableID, winnerID, winnerChips)
+}
+
+func updateTournamentTableBlinds(tournamentID string, newLevel models.BlindLevel) {
+	// Get all tables for this tournament
+	tableInit := tournament.NewTableInitializer(database.DB)
+	tables, err := tableInit.GetTournamentTables(tournamentID)
+	if err != nil {
+		log.Printf("Error getting tournament tables: %v", err)
+		return
+	}
+
+	bridge.mu.Lock()
+	defer bridge.mu.Unlock()
+
+	for _, dbTable := range tables {
+		// Update the engine table if it exists
+		engineTable, exists := bridge.tables[dbTable.ID]
+		if !exists {
+			continue
+		}
+
+		// Update the config in the engine table
+		state := engineTable.GetState()
+		state.Config.SmallBlind = newLevel.SmallBlind
+		state.Config.BigBlind = newLevel.BigBlind
+
+		log.Printf("Updated table %s blinds to %d/%d", dbTable.ID, newLevel.SmallBlind, newLevel.BigBlind)
+	}
+
+	log.Printf("Tournament %s: Updated %d tables with new blinds", tournamentID, len(tables))
+}
+
+func broadcastBlindIncrease(tournamentID string, newLevel models.BlindLevel) {
+	tournament, err := tournamentService.GetTournament(tournamentID)
+	if err != nil {
+		return
+	}
+
+	// Get next level if available
+	var nextLevel *models.BlindLevel
+	nextLevel, _ = blindManager.GetNextBlindLevel(tournamentID)
+
+	// Get time until next level
+	timeUntilNext, _ := blindManager.GetTimeUntilNextLevel(tournamentID)
+
+	message := WSMessage{
+		Type: "blind_level_increased",
+		Payload: map[string]interface{}{
+			"tournament_id":    tournamentID,
+			"current_level":    tournament.CurrentLevel,
+			"small_blind":      newLevel.SmallBlind,
+			"big_blind":        newLevel.BigBlind,
+			"ante":             newLevel.Ante,
+			"next_level":       nextLevel,
+			"time_until_next":  timeUntilNext.Seconds(),
+		},
+	}
+
+	data, _ := json.Marshal(message)
+
+	// Broadcast to all clients
+	bridge.mu.RLock()
+	defer bridge.mu.RUnlock()
+
+	for _, client := range bridge.clients {
+		select {
+		case client.Send <- data:
+		default:
+		}
+	}
+
+	log.Printf("Broadcast blind increase for tournament %s: Level %d (%d/%d)",
+		tournamentID, tournament.CurrentLevel, newLevel.SmallBlind, newLevel.BigBlind)
 }
 
 func broadcastTournamentStarted(tournamentID string) {
