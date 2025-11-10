@@ -29,7 +29,7 @@ export const PlayerSeat: React.FC<PlayerSeatProps> = memo(({
       <Box
         sx={{
           width: 120,
-          height: 140,
+          height: 160,
           borderRadius: RADIUS.md,
           border: `2px dashed ${COLORS.border.main}`,
           background: 'rgba(255, 255, 255, 0.02)',
@@ -61,7 +61,7 @@ export const PlayerSeat: React.FC<PlayerSeatProps> = memo(({
     <Box
       sx={{
         width: 120,
-        height: 140,
+        height: 160,
         position: 'relative',
         transition: TRANSITIONS.normal,
         opacity: player.folded ? 0.5 : 1,
@@ -187,7 +187,7 @@ export const PlayerSeat: React.FC<PlayerSeatProps> = memo(({
             spacing={0.5}
             sx={{
               position: 'absolute',
-              bottom: -30,
+              bottom: -50,
               left: '50%',
               transform: 'translateX(-50%)',
               zIndex: 10,
@@ -209,7 +209,7 @@ export const PlayerSeat: React.FC<PlayerSeatProps> = memo(({
           <Box
             sx={{
               position: 'absolute',
-              bottom: -12,
+              bottom: -24,
               left: '50%',
               transform: 'translateX(-50%)',
               px: 1,
@@ -218,6 +218,7 @@ export const PlayerSeat: React.FC<PlayerSeatProps> = memo(({
               background: `linear-gradient(135deg, ${COLORS.info.main} 0%, ${COLORS.info.dark} 100%)`,
               border: `1px solid ${COLORS.info.main}`,
               boxShadow: `0 2px 8px ${COLORS.info.glow}`,
+              zIndex: 5,
             }}
           >
             <Typography

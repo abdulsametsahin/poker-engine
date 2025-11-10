@@ -34,7 +34,7 @@ export const GameSidebar: React.FC<GameSidebarProps> = memo(({
   currentUserId,
   onSendMessage,
 }) => {
-  const [activeTab, setActiveTab] = useState(0);
+  const [activeTab, setActiveTab] = useState(1); // Default to Chat
 
   return (
     <Box
@@ -58,7 +58,7 @@ export const GameSidebar: React.FC<GameSidebarProps> = memo(({
           minHeight: 40,
           borderBottom: `1px solid ${COLORS.border.main}`,
           '& .MuiTabs-indicator': {
-            backgroundColor: COLORS.primary.main,
+            backgroundColor: COLORS.info.main,
           },
         }}
       >
@@ -71,7 +71,7 @@ export const GameSidebar: React.FC<GameSidebarProps> = memo(({
             fontWeight: 600,
             color: COLORS.text.secondary,
             '&.Mui-selected': {
-              color: COLORS.primary.main,
+              color: COLORS.info.main,
             },
           }}
         />
@@ -84,7 +84,7 @@ export const GameSidebar: React.FC<GameSidebarProps> = memo(({
             fontWeight: 600,
             color: COLORS.text.secondary,
             '&.Mui-selected': {
-              color: COLORS.primary.main,
+              color: COLORS.info.main,
             },
           }}
         />

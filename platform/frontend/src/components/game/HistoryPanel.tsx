@@ -22,39 +22,9 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = memo(({ history }) => {
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
-        borderRadius: RADIUS.md,
-        background: `linear-gradient(135deg, ${COLORS.background.paper}f5 0%, ${COLORS.background.tertiary}f5 100%)`,
-        backdropFilter: 'blur(10px)',
-        border: `1px solid ${COLORS.border.main}`,
         overflow: 'hidden',
       }}
     >
-      {/* Header */}
-      <Box
-        sx={{
-          px: 2,
-          py: 1.5,
-          borderBottom: `1px solid ${COLORS.border.main}`,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1,
-        }}
-      >
-        <History sx={{ fontSize: 18, color: COLORS.primary.main }} />
-        <Typography
-          variant="body2"
-          sx={{
-            color: COLORS.text.primary,
-            fontWeight: 700,
-            fontSize: 13,
-            letterSpacing: '0.05em',
-            textTransform: 'uppercase',
-          }}
-        >
-          History
-        </Typography>
-      </Box>
-
       {/* History list */}
       <Stack
         spacing={0.5}

@@ -12,7 +12,7 @@ type User struct {
 	Username     string    `gorm:"column:username;type:varchar(50);uniqueIndex;not null" json:"username"`
 	Email        string    `gorm:"column:email;type:varchar(100);uniqueIndex;not null" json:"email"`
 	PasswordHash string    `gorm:"column:password_hash;type:varchar(255);not null" json:"-"`
-	Chips        int       `gorm:"column:chips;default:1000" json:"chips"`
+	Chips        int       `gorm:"column:chips;default:10000" json:"chips"`
 	CreatedAt    time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 	UpdatedAt    time.Time `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
 }
