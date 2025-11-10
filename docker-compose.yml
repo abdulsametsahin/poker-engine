@@ -4,7 +4,7 @@ services:
   # MySQL Database
   db:
     image: mysql:8.0
-    platform: linux/arm64
+    platform: linux/amd64
     container_name: poker-db
     restart: unless-stopped
     environment:
