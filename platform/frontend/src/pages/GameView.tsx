@@ -66,6 +66,13 @@ export const GameView: React.FC = () => {
   const minRaiseAmount = currentBet > 0 ? currentBet * GAME.MIN_RAISE_MULTIPLIER : GAME.BLINDS.heads_up.big * 2;
   const maxRaiseAmount = currentPlayer?.chips || 1000;
 
+  // Initialize raise amount to min bet when it becomes player's turn
+  React.useEffect(() => {
+    if (isMyTurn && tableState?.status === 'playing') {
+      setRaiseAmount(minRaiseAmount);
+    }
+  }, [isMyTurn, minRaiseAmount, tableState?.status]);
+
   // Subscribe to table on mount
   useEffect(() => {
     if (isConnected && tableId) {
@@ -344,68 +351,28 @@ export const GameView: React.FC = () => {
         onSendMessage={handleSendChatMessage}
       />
 
-      {/* Action bar */}
-      <Box
-        sx={{
-          px: 3,
-          py: 2,
-          background: 'rgba(0, 0, 0, 0.4)',
-          backdropFilter: 'blur(10px)',
-          borderTop: `1px solid ${COLORS.border.main}`,
-        }}
-      >
-        <Stack spacing={2}>
-          {/* Raise amount input */}
-          {isMyTurn && (
-            <Box sx={{ px: 2, maxWidth: 300, mx: 'auto' }}>
-              <TextField
-                type="number"
-                label="Raise Amount"
-                value={raiseAmount}
-                onChange={(e) => setRaiseAmount(Number(e.target.value))}
-                InputProps={{
-                  startAdornment: <InputAdornment position="start">$</InputAdornment>,
-                }}
-                inputProps={{
-                  min: minRaiseAmount,
-                  max: maxRaiseAmount,
-                  step: 10,
-                }}
-                helperText={`Min: $${minRaiseAmount} • Max: $${maxRaiseAmount}`}
-                fullWidth
-                size="small"
-                sx={{
-                  '& .MuiOutlinedInput-root': {
-                    color: COLORS.text.primary,
-                    '& fieldset': {
-                      borderColor: COLORS.border.main,
-                    },
-                    '&:hover fieldset': {
-                      borderColor: COLORS.primary.main,
-                    },
-                    '&.Mui-focused fieldset': {
-                      borderColor: COLORS.primary.main,
-                    },
-                  },
-                  '& .MuiInputLabel-root': {
-                    color: COLORS.text.secondary,
-                  },
-                  '& .MuiFormHelperText-root': {
-                    color: COLORS.text.secondary,
-                    fontSize: '10px',
-                  },
-                }}
-              />
-            </Box>
-          )}
-
-          {/* Action buttons */}
-          <Stack direction="row" spacing={1.5} justifyContent="center" flexWrap="wrap">
+      {/* Action bar - Only show when playing and it's my turn */}
+      {tableState?.status === 'playing' && isMyTurn && (
+        <Box
+          sx={{
+            px: 3,
+            py: 1.5,
+            background: 'rgba(0, 0, 0, 0.4)',
+            backdropFilter: 'blur(10px)',
+            borderTop: `1px solid ${COLORS.border.main}`,
+          }}
+        >
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+            {/* Primary action buttons */}
             <Button
               variant="danger"
               onClick={() => handleAction('fold')}
-              disabled={!isMyTurn}
-              sx={{ minWidth: 100 }}
+              sx={{
+                minWidth: 70,
+                height: 36,
+                fontSize: '12px',
+                px: 2,
+              }}
             >
               FOLD
             </Button>
@@ -413,8 +380,13 @@ export const GameView: React.FC = () => {
             <Button
               variant="secondary"
               onClick={() => handleAction('check')}
-              disabled={!isMyTurn || currentBet > playerBet}
-              sx={{ minWidth: 100 }}
+              disabled={currentBet > playerBet}
+              sx={{
+                minWidth: 70,
+                height: 36,
+                fontSize: '12px',
+                px: 2,
+              }}
             >
               CHECK
             </Button>
@@ -422,27 +394,81 @@ export const GameView: React.FC = () => {
             <Button
               variant="success"
               onClick={() => handleAction('call')}
-              disabled={!isMyTurn || callAmount <= 0}
-              sx={{ minWidth: 100 }}
+              disabled={callAmount <= 0}
+              sx={{
+                minWidth: 70,
+                height: 36,
+                fontSize: '12px',
+                px: 2,
+              }}
             >
               CALL {callAmount > 0 && `$${callAmount}`}
             </Button>
 
+            {/* Divider */}
+            <Box sx={{ width: 1, height: 24, bgcolor: COLORS.border.main, mx: 0.5 }} />
+
+            {/* Raise amount input - compact and on the left */}
+            <TextField
+              type="number"
+              value={raiseAmount}
+              onChange={(e) => setRaiseAmount(Number(e.target.value))}
+              InputProps={{
+                startAdornment: <InputAdornment position="start" sx={{ mr: 0.5 }}>$</InputAdornment>,
+              }}
+              inputProps={{
+                min: minRaiseAmount,
+                max: maxRaiseAmount,
+                step: 10,
+              }}
+              size="small"
+              sx={{
+                width: 100,
+                '& .MuiOutlinedInput-root': {
+                  height: 36,
+                  color: COLORS.text.primary,
+                  fontSize: '13px',
+                  '& fieldset': {
+                    borderColor: COLORS.border.main,
+                  },
+                  '&:hover fieldset': {
+                    borderColor: COLORS.primary.main,
+                  },
+                  '&.Mui-focused fieldset': {
+                    borderColor: COLORS.primary.main,
+                  },
+                },
+                '& input': {
+                  py: 0.75,
+                  px: 1,
+                },
+              }}
+            />
+
+            {/* Raise button */}
             <Button
               variant="primary"
               onClick={() => handleAction('raise', raiseAmount)}
-              disabled={!isMyTurn || raiseAmount < minRaiseAmount}
-              sx={{ minWidth: 120 }}
+              disabled={raiseAmount < minRaiseAmount}
+              sx={{
+                minWidth: 70,
+                height: 36,
+                fontSize: '12px',
+                px: 2,
+              }}
             >
-              RAISE ${raiseAmount}
+              RAISE
             </Button>
 
+            {/* All-in button */}
             <Button
               variant="warning"
               onClick={() => handleAction('allin')}
-              disabled={!isMyTurn}
               sx={{
-                minWidth: 100,
+                minWidth: 70,
+                height: 36,
+                fontSize: '12px',
+                px: 2,
                 background: `linear-gradient(135deg, ${COLORS.warning.main} 0%, ${COLORS.warning.dark} 100%)`,
                 '&:hover': {
                   background: `linear-gradient(135deg, ${COLORS.warning.light} 0%, ${COLORS.warning.main} 100%)`,
@@ -451,9 +477,21 @@ export const GameView: React.FC = () => {
             >
               ALL-IN
             </Button>
+
+            {/* Helper text */}
+            <Typography
+              variant="caption"
+              sx={{
+                color: COLORS.text.secondary,
+                fontSize: '10px',
+                ml: 2,
+              }}
+            >
+              Min: ${minRaiseAmount} • Max: ${maxRaiseAmount}
+            </Typography>
           </Stack>
-        </Stack>
-      </Box>
+        </Box>
+      )}
 
       {/* Hand Complete Display - Side panel with auto-hide */}
       {showHandComplete && tableState?.winners && tableState.winners.length > 0 && !showGameComplete && (
