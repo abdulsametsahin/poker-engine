@@ -1777,6 +1777,15 @@ func initializeTournamentTables(tournamentID string) {
 			time.Sleep(2 * time.Second)
 			if err := t.StartGame(); err != nil {
 				log.Printf("Error starting game for table %s: %v", tid, err)
+			} else {
+				// Update database table status to playing
+				now := time.Now()
+				database.Model(&models.Table{}).Where("id = ?", tid).Updates(map[string]interface{}{
+					"status":     "playing",
+					"started_at": &now,
+				})
+				log.Printf("Tournament table %s status updated to playing", tid)
+				broadcastTableState(tid)
 			}
 		}(table, tableID)
 
