@@ -1816,8 +1816,18 @@ func handleTournamentEngineEvent(tableID string, event pokerModels.Event) {
 	switch event.Event {
 	case "handStart":
 		log.Printf("Hand started on tournament table %s", tableID)
+		// Create hand record at the start of the hand
+		createHandRecord(tableID, event)
+		broadcastTableState(tableID)
+
 	case "handComplete":
 		log.Printf("Hand completed on tournament table %s", tableID)
+
+		// Update hand data with final results
+		updateHandRecord(tableID, event)
+
+		// Sync player chips to database after hand completion
+		syncPlayerChipsToDatabase(tableID)
 
 		// Check for player eliminations
 		go checkTournamentEliminations(tableID)
@@ -1858,7 +1868,17 @@ func handleTournamentEngineEvent(tableID string, event pokerModels.Event) {
 		return // Return early since we already broadcasted
 
 	case "gameComplete":
-		handleTournamentTableComplete(tableID)
+		handleTournamentTableComplete(tableID, event)
+
+	case "playerAction", "roundAdvanced":
+		// Broadcast on significant events only
+		broadcastTableState(tableID)
+
+	case "cardDealt":
+		// Don't broadcast on every card dealt to reduce message frequency
+		// The next playerAction or roundAdvanced will trigger a broadcast
+		log.Printf("Card dealt on tournament table %s (skipping broadcast)", tableID)
+		return // Return early to skip the default broadcast
 	}
 
 	broadcastTableState(tableID)
@@ -1915,7 +1935,7 @@ func checkTournamentEliminations(tableID string) {
 	}
 }
 
-func handleTournamentTableComplete(tableID string) {
+func handleTournamentTableComplete(tableID string, event pokerModels.Event) {
 	bridge.mu.RLock()
 	table, exists := bridge.tables[tableID]
 	bridge.mu.RUnlock()
@@ -1942,6 +1962,53 @@ func handleTournamentTableComplete(tableID string) {
 	}
 
 	log.Printf("Tournament table %s complete. Winner: %s with %d chips", tableID, winnerID, winnerChips)
+
+	// Mark table as completed in database
+	now := time.Now()
+	err := database.Model(&models.Table{}).Where("id = ?", tableID).Updates(map[string]interface{}{
+		"status":       "completed",
+		"completed_at": &now,
+	}).Error
+	if err != nil {
+		log.Printf("Failed to update tournament table status: %v", err)
+	}
+
+	broadcastTableState(tableID)
+
+	// Send game complete message after a short delay
+	go func() {
+		time.Sleep(3 * time.Second)
+
+		data, ok := event.Data.(map[string]interface{})
+		if ok {
+			gameCompleteMsg := WSMessage{
+				Type: "tournament_table_complete",
+				Payload: map[string]interface{}{
+					"table_id":     tableID,
+					"winner":       data["winner"],
+					"winnerName":   data["winnerName"],
+					"finalChips":   data["finalChips"],
+					"totalPlayers": data["totalPlayers"],
+					"message":      "Table Complete! Winner advances!",
+				},
+			}
+
+			msgData, _ := json.Marshal(gameCompleteMsg)
+
+			bridge.mu.RLock()
+			for _, client := range bridge.clients {
+				if client.TableID == tableID {
+					select {
+					case client.Send <- msgData:
+					default:
+						close(client.Send)
+					}
+				}
+			}
+			bridge.mu.RUnlock()
+			log.Printf("Tournament table complete message sent for table %s", tableID)
+		}
+	}()
 }
 
 func updateTournamentTableBlinds(tournamentID string, newLevel models.BlindLevel) {
