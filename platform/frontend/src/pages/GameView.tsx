@@ -218,7 +218,55 @@ export const GameView: React.FC = () => {
         height: '100vh',
         display: 'flex',
         flexDirection: 'column',
+        position: 'relative',
         background: `linear-gradient(135deg, ${COLORS.background.primary} 0%, ${COLORS.background.secondary} 100%)`,
+        overflow: 'hidden',
+
+        // Ambient lighting effects
+        '&::before': {
+          content: '""',
+          position: 'absolute',
+          top: '-50%',
+          left: '-50%',
+          width: '200%',
+          height: '200%',
+          background: `
+            radial-gradient(circle at 30% 30%, rgba(124, 58, 237, 0.15) 0%, transparent 40%),
+            radial-gradient(circle at 70% 70%, rgba(6, 182, 212, 0.12) 0%, transparent 40%)
+          `,
+          pointerEvents: 'none',
+          zIndex: 0,
+          animation: 'ambientGlow 20s ease-in-out infinite',
+        },
+
+        // Subtle grain texture
+        '&::after': {
+          content: '""',
+          position: 'absolute',
+          inset: 0,
+          backgroundImage: `
+            repeating-linear-gradient(0deg, transparent, transparent 1px, rgba(255,255,255,0.01) 1px, rgba(255,255,255,0.01) 2px),
+            repeating-linear-gradient(90deg, transparent, transparent 1px, rgba(255,255,255,0.01) 1px, rgba(255,255,255,0.01) 2px)
+          `,
+          pointerEvents: 'none',
+          zIndex: 0,
+        },
+
+        '@keyframes ambientGlow': {
+          '0%, 100%': {
+            transform: 'translate(0, 0) scale(1)',
+            opacity: 0.6,
+          },
+          '50%': {
+            transform: 'translate(5%, 5%) scale(1.1)',
+            opacity: 0.8,
+          },
+        },
+
+        '& > *': {
+          position: 'relative',
+          zIndex: 1,
+        },
       }}
     >
       {/* Header */}
@@ -273,18 +321,28 @@ export const GameView: React.FC = () => {
         </IconButton>
       </Box>
 
-      {/* Main game area with sidebar */}
-      <Box sx={{ flex: 1, p: 2, overflow: 'hidden', display: 'flex', gap: 2 }}>
-        <Box sx={{ flex: 1, overflow: 'hidden' }}>
-          <PokerTable tableState={tableState} currentUserId={currentUserId} />
-        </Box>
-        <GameSidebar
-          history={history}
-          messages={chatMessages}
-          currentUserId={currentUserId}
-          onSendMessage={handleSendChatMessage}
-        />
+      {/* Main game area - Full width for circular table */}
+      <Box
+        sx={{
+          flex: 1,
+          p: 3,
+          overflow: 'hidden',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          position: 'relative',
+        }}
+      >
+        <PokerTable tableState={tableState} currentUserId={currentUserId} />
       </Box>
+
+      {/* Floating sidebar (renders in top-right corner) */}
+      <GameSidebar
+        history={history}
+        messages={chatMessages}
+        currentUserId={currentUserId}
+        onSendMessage={handleSendChatMessage}
+      />
 
       {/* Action bar */}
       <Box
