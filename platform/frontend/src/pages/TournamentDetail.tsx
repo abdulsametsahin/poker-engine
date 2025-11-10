@@ -54,6 +54,7 @@ interface Tournament {
   prize_structure: string;
   start_time?: string;
   registration_closes_at?: string;
+  registration_completed_at?: string;
   auto_start_delay: number;
   current_level: number;
   level_started_at?: string;
@@ -214,13 +215,21 @@ export const TournamentDetail: React.FC = () => {
 
     const calculateCountdown = () => {
       if (tournament.start_time) {
+        // Scheduled start time
         const startTime = new Date(tournament.start_time).getTime();
         const now = Date.now();
         const diff = Math.max(0, Math.floor((startTime - now) / 1000));
         setCountdown(diff);
-      } else if (tournament.current_players >= tournament.min_players) {
-        // Use auto_start_delay
-        setCountdown(tournament.auto_start_delay);
+      } else if (tournament.registration_completed_at) {
+        // Auto-start countdown based on when min_players was reached
+        const registrationCompletedTime = new Date(tournament.registration_completed_at).getTime();
+        const now = Date.now();
+        const elapsed = Math.floor((now - registrationCompletedTime) / 1000);
+        const remaining = Math.max(0, tournament.auto_start_delay - elapsed);
+        setCountdown(remaining);
+      } else {
+        // Min players not reached yet
+        setCountdown(null);
       }
     };
 

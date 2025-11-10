@@ -209,10 +209,19 @@ func (s *Service) RegisterPlayer(tournamentID, userID string) error {
 	newPlayerCount := tournament.CurrentPlayers + 1
 	newPrizePool := tournament.PrizePool + tournament.BuyIn
 
-	if err := tx.Model(&tournament).Updates(map[string]interface{}{
+	updates := map[string]interface{}{
 		"current_players": newPlayerCount,
 		"prize_pool":      newPrizePool,
-	}).Error; err != nil {
+	}
+
+	// If we just reached min_players and don't have a scheduled start time,
+	// set registration_completed_at for auto-start countdown
+	if newPlayerCount == tournament.MinPlayers && tournament.StartTime == nil && tournament.RegistrationCompletedAt == nil {
+		now := time.Now()
+		updates["registration_completed_at"] = now
+	}
+
+	if err := tx.Model(&tournament).Updates(updates).Error; err != nil {
 		tx.Rollback()
 		return err
 	}
@@ -277,10 +286,17 @@ func (s *Service) UnregisterPlayer(tournamentID, userID string) error {
 	newPlayerCount := tournament.CurrentPlayers - 1
 	newPrizePool := tournament.PrizePool - tournament.BuyIn
 
-	if err := tx.Model(&tournament).Updates(map[string]interface{}{
+	updates := map[string]interface{}{
 		"current_players": newPlayerCount,
 		"prize_pool":      newPrizePool,
-	}).Error; err != nil {
+	}
+
+	// If we drop below min_players, clear the registration_completed_at timestamp
+	if newPlayerCount < tournament.MinPlayers && tournament.RegistrationCompletedAt != nil {
+		updates["registration_completed_at"] = nil
+	}
+
+	if err := tx.Model(&tournament).Updates(updates).Error; err != nil {
 		tx.Rollback()
 		return err
 	}

@@ -81,6 +81,7 @@ type Tournament struct {
 	PrizeStructure        string         `gorm:"column:prize_structure;type:json" json:"prize_structure"`
 	StartTime             *time.Time     `gorm:"column:start_time" json:"start_time,omitempty"`
 	RegistrationClosesAt  *time.Time     `gorm:"column:registration_closes_at" json:"registration_closes_at,omitempty"`
+	RegistrationCompletedAt *time.Time   `gorm:"column:registration_completed_at" json:"registration_completed_at,omitempty"`
 	AutoStartDelay        int            `gorm:"column:auto_start_delay;default:300" json:"auto_start_delay"` // seconds
 	CurrentLevel          int            `gorm:"column:current_level;default:1" json:"current_level"`
 	LevelStartedAt        *time.Time     `gorm:"column:level_started_at" json:"level_started_at,omitempty"`

@@ -95,12 +95,10 @@ func (s *Starter) shouldStartTournament(tournament models.Tournament, now time.T
 	}
 
 	// Check if min players reached and auto-start delay expired
-	if tournament.CurrentPlayers >= tournament.MinPlayers {
-		// Find when min players was first reached
-		// For now, we'll use a simpler approach: check if enough time has passed since creation
-		// TODO: Track exact time when min_players was reached
-		timeSinceCreation := now.Sub(tournament.CreatedAt)
-		if timeSinceCreation.Seconds() >= float64(tournament.AutoStartDelay) {
+	if tournament.CurrentPlayers >= tournament.MinPlayers && tournament.RegistrationCompletedAt != nil {
+		// Check if enough time has passed since minimum players was reached
+		timeSinceMinPlayers := now.Sub(*tournament.RegistrationCompletedAt)
+		if timeSinceMinPlayers.Seconds() >= float64(tournament.AutoStartDelay) {
 			return true
 		}
 	}
