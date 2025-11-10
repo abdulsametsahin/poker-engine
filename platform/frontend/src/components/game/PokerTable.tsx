@@ -155,14 +155,14 @@ export const PokerTable: React.FC<PokerTableProps> = memo(({
         {/* Pot */}
         <Box
           sx={{
-            px: 3,
-            py: 1.5,
-            borderRadius: RADIUS.md,
+            px: 2,
+            py: 1,
+            borderRadius: RADIUS.sm,
             background: 'rgba(0, 0, 0, 0.6)',
             backdropFilter: 'blur(10px)',
-            border: `2px solid ${COLORS.accent.main}`,
-            boxShadow: `0 4px 12px rgba(0, 0, 0, 0.5), 0 0 20px ${COLORS.accent.glow}`,
-            minWidth: 120,
+            border: `1.5px solid ${COLORS.accent.main}`,
+            boxShadow: `0 2px 8px rgba(0, 0, 0, 0.5), 0 0 12px ${COLORS.accent.glow}`,
+            minWidth: 90,
             textAlign: 'center',
           }}
         >
@@ -170,9 +170,9 @@ export const PokerTable: React.FC<PokerTableProps> = memo(({
             variant="caption"
             sx={{
               color: COLORS.text.secondary,
-              fontSize: '10px',
+              fontSize: '9px',
               fontWeight: 600,
-              letterSpacing: '0.1em',
+              letterSpacing: '0.08em',
             }}
           >
             POT
@@ -182,8 +182,8 @@ export const PokerTable: React.FC<PokerTableProps> = memo(({
             sx={{
               color: COLORS.accent.main,
               fontWeight: 900,
-              fontSize: '28px',
-              lineHeight: 1.2,
+              fontSize: '20px',
+              lineHeight: 1.1,
               fontFamily: 'monospace',
             }}
           >
@@ -195,11 +195,11 @@ export const PokerTable: React.FC<PokerTableProps> = memo(({
         {community_cards.length > 0 && (
           <Stack
             direction="row"
-            spacing={1}
+            spacing={0.75}
             sx={{
-              px: 2,
-              py: 1.5,
-              borderRadius: RADIUS.md,
+              px: 1.5,
+              py: 1,
+              borderRadius: RADIUS.sm,
               background: 'rgba(0, 0, 0, 0.5)',
               backdropFilter: 'blur(10px)',
               border: `1px solid ${COLORS.border.heavy}`,
@@ -209,7 +209,7 @@ export const PokerTable: React.FC<PokerTableProps> = memo(({
               <PlayingCard
                 key={idx}
                 card={card}
-                size="medium"
+                size="small"
                 dealAnimation={idx >= 0} // All cards have deal animation
               />
             ))}
@@ -220,22 +220,22 @@ export const PokerTable: React.FC<PokerTableProps> = memo(({
         {status === 'playing' && betting_round && (
           <Box
             sx={{
-              px: 2.5,
-              py: 1,
-              borderRadius: RADIUS.md,
+              px: 2,
+              py: 0.75,
+              borderRadius: RADIUS.sm,
               background: `linear-gradient(135deg, ${COLORS.primary.main}40 0%, ${COLORS.secondary.main}40 100%)`,
               backdropFilter: 'blur(10px)',
               border: `1px solid ${COLORS.primary.main}`,
-              boxShadow: `0 0 12px ${COLORS.primary.glow}`,
+              boxShadow: `0 0 8px ${COLORS.primary.glow}`,
             }}
           >
             <Typography
               variant="caption"
               sx={{
                 color: COLORS.primary.light,
-                fontSize: '11px',
+                fontSize: '10px',
                 fontWeight: 700,
-                letterSpacing: '0.1em',
+                letterSpacing: '0.08em',
               }}
             >
               {getBettingRoundName(betting_round)}
@@ -245,9 +245,9 @@ export const PokerTable: React.FC<PokerTableProps> = memo(({
                 variant="caption"
                 sx={{
                   color: COLORS.text.secondary,
-                  fontSize: '9px',
+                  fontSize: '8px',
                   display: 'block',
-                  mt: 0.25,
+                  mt: 0.2,
                 }}
               >
                 Current Bet: ${current_bet}
