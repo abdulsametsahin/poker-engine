@@ -142,6 +142,7 @@ export interface User {
   chips?: number;
   games_played?: number;
   games_won?: number;
+  created_at?: string;
 }
 
 export interface ToastMessage {
