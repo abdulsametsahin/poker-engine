@@ -19,15 +19,33 @@ const HandCompleteDisplay: React.FC<HandCompleteDisplayProps> = ({
   onClose,
 }) => {
   const [show, setShow] = useState(false);
+  const [countdown, setCountdown] = useState(Math.floor(GAME.HAND_COMPLETE_DELAY / 1000));
 
   useEffect(() => {
     if (winners && winners.length > 0) {
       setShow(true);
-      // Auto hide after 5 seconds
+      setCountdown(Math.floor(GAME.HAND_COMPLETE_DELAY / 1000));
+
+      // Countdown timer
+      const countdownInterval = setInterval(() => {
+        setCountdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(countdownInterval);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+
+      // Auto hide after HAND_COMPLETE_DELAY
       const timer = setTimeout(() => {
         handleClose();
-      }, 5000);
-      return () => clearTimeout(timer);
+      }, GAME.HAND_COMPLETE_DELAY);
+
+      return () => {
+        clearTimeout(timer);
+        clearInterval(countdownInterval);
+      };
     }
   }, [winners]);
 
@@ -212,7 +230,7 @@ const HandCompleteDisplay: React.FC<HandCompleteDisplayProps> = ({
                 })}
               </Stack>
 
-              {/* Auto-close hint */}
+              {/* Auto-close hint with countdown */}
               <Typography
                 variant="caption"
                 sx={{
@@ -222,7 +240,7 @@ const HandCompleteDisplay: React.FC<HandCompleteDisplayProps> = ({
                   mt: 0.5,
                 }}
               >
-                Click to dismiss • Auto-closing in 5s
+                Click to dismiss • Auto-closing in {countdown}s
               </Typography>
             </Stack>
           </Box>

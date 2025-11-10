@@ -199,7 +199,9 @@ export const BREAKPOINTS = {
 export const GAME = {
   // Timing
   ACTION_TIMER_DURATION: 30000,        // 30 seconds
-  WINNER_MODAL_DURATION: 5000,         // 5 seconds
+  HAND_COMPLETE_DELAY: 8000,           // 8 seconds - time to show hand results
+  MATCH_FOUND_COUNTDOWN: 10000,        // 10 seconds - countdown before starting game
+  WINNER_MODAL_DURATION: 5000,         // 5 seconds (deprecated - use HAND_COMPLETE_DELAY)
   TOAST_DURATION: 2000,                // 2 seconds
   POLLING_INTERVAL: 5000,              // 5 seconds (should be removed)
   RECONNECT_DELAY: 1000,               // 1 second
