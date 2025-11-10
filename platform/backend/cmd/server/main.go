@@ -76,10 +76,10 @@ type MatchmakingQueueEntry struct {
 }
 
 type Client struct {
-	UserID   string
-	TableID  string
-	Conn     *websocket.Conn
-	Send     chan []byte
+	UserID  string
+	TableID string
+	Conn    *websocket.Conn
+	Send    chan []byte
 }
 
 type WSMessage struct {
@@ -326,18 +326,18 @@ func handleGetPastTables(c *gin.Context) {
 	userID := c.GetString("user_id")
 
 	type TableResult struct {
-		ID           string         `json:"id"`
-		Name         string         `json:"name"`
-		GameType     string         `json:"game_type"`
-		SmallBlind   int            `json:"small_blind"`
-		BigBlind     int            `json:"big_blind"`
-		MaxPlayers   int            `json:"max_players"`
-		MinBuyIn     *int           `json:"min_buy_in"`
-		MaxBuyIn     *int           `json:"max_buy_in"`
-		CompletedAt  *time.Time     `json:"completed_at"`
-		TotalPlayers int64          `json:"total_players"`
-		Participated int            `json:"participated"`
-		TotalHands   int64          `json:"total_hands"`
+		ID           string     `json:"id"`
+		Name         string     `json:"name"`
+		GameType     string     `json:"game_type"`
+		SmallBlind   int        `json:"small_blind"`
+		BigBlind     int        `json:"big_blind"`
+		MaxPlayers   int        `json:"max_players"`
+		MinBuyIn     *int       `json:"min_buy_in"`
+		MaxBuyIn     *int       `json:"max_buy_in"`
+		CompletedAt  *time.Time `json:"completed_at"`
+		TotalPlayers int64      `json:"total_players"`
+		Participated int        `json:"participated"`
+		TotalHands   int64      `json:"total_hands"`
 	}
 
 	var results []TableResult
