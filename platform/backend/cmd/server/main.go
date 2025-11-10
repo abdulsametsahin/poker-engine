@@ -26,10 +26,11 @@ import (
 )
 
 var (
-	database         *db.DB
-	authService      *auth.Service
+	database          *db.DB
+	authService       *auth.Service
 	tournamentService *tournament.Service
-	upgrader         = websocket.Upgrader{
+	tournamentStarter *tournament.Starter
+	upgrader          = websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool { return true },
 	}
 )
@@ -123,6 +124,16 @@ func main() {
 
 	authService = auth.NewService(getEnv("JWT_SECRET", "secret"))
 	tournamentService = tournament.NewService(database.DB)
+	tournamentStarter = tournament.NewStarter(database.DB, tournamentService)
+
+	// Set callback for when tournaments start automatically
+	tournamentStarter.SetOnStartCallback(func(tournamentID string) {
+		go initializeTournamentTables(tournamentID)
+		go broadcastTournamentStarted(tournamentID)
+	})
+
+	// Start tournament starter service in background
+	go tournamentStarter.Start()
 
 	// Set Gin mode based on environment
 	if getEnv("ENV", "development") == "production" {
@@ -170,6 +181,7 @@ func main() {
 		authorized.POST("/api/tournaments/:id/unregister", handleUnregisterTournament)
 		authorized.DELETE("/api/tournaments/:id", handleCancelTournament)
 		authorized.GET("/api/tournaments/:id/players", handleGetTournamentPlayers)
+		authorized.POST("/api/tournaments/:id/start", handleStartTournament)
 	}
 
 	// Public tournament endpoint (for shareable links)
@@ -1628,6 +1640,153 @@ func handleGetTournamentPlayers(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, response)
+}
+
+func handleStartTournament(c *gin.Context) {
+	tournamentID := c.Param("id")
+
+	if err := tournamentStarter.ForceStartTournament(tournamentID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Initialize tournament tables in game engine
+	go initializeTournamentTables(tournamentID)
+
+	// Broadcast tournament started
+	go broadcastTournamentStarted(tournamentID)
+
+	c.JSON(http.StatusOK, gin.H{"message": "Tournament started"})
+}
+
+func initializeTournamentTables(tournamentID string) {
+	tableInit := tournament.NewTableInitializer(database.DB)
+
+	modelTables, err := tableInit.InitializeAllTournamentTables(tournamentID)
+	if err != nil {
+		log.Printf("Error initializing tournament tables: %v", err)
+		return
+	}
+
+	// Add tables to game bridge and start them
+	bridge.mu.Lock()
+	for _, modelTable := range modelTables {
+		tableID := modelTable.TableID
+
+		// Create callbacks
+		onTimeout := func(playerID string) {
+			bridge.mu.RLock()
+			table, exists := bridge.tables[tableID]
+			bridge.mu.RUnlock()
+			if exists {
+				table.HandleTimeout(playerID)
+			}
+		}
+
+		onEvent := func(event pokerModels.Event) {
+			handleTournamentEngineEvent(tableID, event)
+		}
+
+		// Create engine table
+		table := engine.NewTable(tableID, modelTable.GameType, modelTable.Config, onTimeout, onEvent)
+
+		// Add players to the engine table
+		for _, player := range modelTable.Players {
+			if player != nil {
+				if err := table.AddPlayer(player.PlayerID, player.PlayerName, player.SeatNumber, player.Chips); err != nil {
+					log.Printf("Error adding player %s to table %s: %v", player.PlayerID, tableID, err)
+				}
+			}
+		}
+
+		// Add to bridge
+		bridge.tables[tableID] = table
+
+		// Start the game
+		go func(t *engine.Table, tid string) {
+			time.Sleep(2 * time.Second)
+			if err := t.StartGame(); err != nil {
+				log.Printf("Error starting game for table %s: %v", tid, err)
+			}
+		}(table, tableID)
+
+		log.Printf("Initialized tournament table %s", tableID)
+	}
+	bridge.mu.Unlock()
+
+	log.Printf("Tournament %s: %d tables initialized and started", tournamentID, len(modelTables))
+}
+
+func handleTournamentEngineEvent(tableID string, event pokerModels.Event) {
+	log.Printf("Tournament table %s event: %s", tableID, event.Event)
+
+	switch event.Event {
+	case "handStart":
+		log.Printf("Hand started on tournament table %s", tableID)
+	case "handComplete":
+		log.Printf("Hand completed on tournament table %s", tableID)
+	case "gameComplete":
+		handleTournamentTableComplete(tableID)
+	}
+
+	broadcastTableState(tableID)
+}
+
+func handleTournamentTableComplete(tableID string) {
+	bridge.mu.RLock()
+	table, exists := bridge.tables[tableID]
+	bridge.mu.RUnlock()
+
+	if !exists {
+		return
+	}
+
+	state := table.GetState()
+
+	var winnerID string
+	var winnerChips int
+	for _, player := range state.Players {
+		if player != nil && player.Chips > 0 {
+			winnerID = player.PlayerID
+			winnerChips = player.Chips
+			break
+		}
+	}
+
+	if winnerID == "" {
+		log.Printf("Tournament table %s complete but no winner found", tableID)
+		return
+	}
+
+	log.Printf("Tournament table %s complete. Winner: %s with %d chips", tableID, winnerID, winnerChips)
+}
+
+func broadcastTournamentStarted(tournamentID string) {
+	tournament, err := tournamentService.GetTournament(tournamentID)
+	if err != nil {
+		return
+	}
+
+	message := WSMessage{
+		Type: "tournament_started",
+		Payload: map[string]interface{}{
+			"tournament_id": tournamentID,
+			"tournament":    tournament,
+		},
+	}
+
+	data, _ := json.Marshal(message)
+
+	// Broadcast to all clients
+	bridge.mu.RLock()
+	defer bridge.mu.RUnlock()
+
+	for _, client := range bridge.clients {
+		select {
+		case client.Send <- data:
+		default:
+		}
+	}
 }
 
 func broadcastTournamentUpdate(tournamentID string) {
