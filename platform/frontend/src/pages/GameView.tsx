@@ -1,12 +1,13 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Box, Stack, Slider, IconButton, Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material';
+import { Box, Stack, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, TextField, InputAdornment } from '@mui/material';
 import { ArrowBack, ExitToApp } from '@mui/icons-material';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useWebSocket } from '../contexts/WebSocketContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { PokerTable } from '../components/game/PokerTable';
-import { WinnerDisplay } from '../components/modals';
+import { GameSidebar } from '../components/game/GameSidebar';
+import { WinnerDisplay, HandCompleteDisplay } from '../components/modals';
 import { Button } from '../components/common/Button';
 import { Badge } from '../components/common/Badge';
 import { COLORS, RADIUS, SPACING, GAME } from '../constants';
@@ -34,10 +35,12 @@ export const GameView: React.FC = () => {
 
   const [tableState, setTableState] = useState<TableState | null>(null);
   const [raiseAmount, setRaiseAmount] = useState(0);
-  const [showWinners, setShowWinners] = useState(false);
-  const [gameComplete, setGameComplete] = useState(false);
+  const [showHandComplete, setShowHandComplete] = useState(false);
+  const [showGameComplete, setShowGameComplete] = useState(false);
   const [gameMode, setGameMode] = useState<string>('heads_up');
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
+  const [history, setHistory] = useState<any[]>([]);
+  const [chatMessages, setChatMessages] = useState<any[]>([]);
 
   // Find current user
   const currentUserId = user?.id || tableState?.players?.find(p => p.cards && p.cards.length > 0)?.user_id;
@@ -99,21 +102,20 @@ export const GameView: React.FC = () => {
         setGameMode('6_player');
       }
 
-      // Check if transitioning from handComplete to a new hand (hide modal)
+      // Check if transitioning from handComplete to a new hand (hide modals)
       if (
         (tableState?.status === 'handComplete' && newState.status === 'waiting') ||
         (tableState?.status === 'handComplete' && newState.status === 'playing' && !newState.winners)
       ) {
-        setShowWinners(false);
-        setGameComplete(false);
+        setShowHandComplete(false);
+        setShowGameComplete(false);
       }
 
       setTableState(newState);
 
-      // Show winners modal when hand is complete
+      // Show hand complete display when hand is complete (not game complete)
       if (newState.status === 'handComplete' && newState.winners && newState.winners.length > 0) {
-        setShowWinners(true);
-        setGameComplete(false);
+        setShowHandComplete(true);
       }
     };
 
@@ -122,10 +124,15 @@ export const GameView: React.FC = () => {
     };
 
     const handleGameComplete = (message: WSMessage) => {
-      // Show game complete in the same modal
+      // Show game complete modal (different from hand complete)
       showSuccess('Game complete!');
-      setGameComplete(true);
-      setShowWinners(true);
+      setShowHandComplete(false); // Hide hand complete if showing
+      setShowGameComplete(true);
+
+      // Update table state with game complete info
+      if (message.payload) {
+        handleTableState(message);
+      }
     };
 
     const handleError = (message: WSMessage) => {
@@ -150,7 +157,30 @@ export const GameView: React.FC = () => {
       type: 'game_action',
       payload: { action, amount: amount || 0 },
     });
-  }, [sendMessage]);
+
+    // Add to history
+    const playerName = currentPlayer?.username || user?.username || 'You';
+    setHistory(prev => [...prev, {
+      id: Date.now().toString(),
+      playerName,
+      action,
+      amount,
+      timestamp: new Date(),
+    }]);
+  }, [sendMessage, currentPlayer, user]);
+
+  const handleSendChatMessage = useCallback((message: string) => {
+    // For now, just add to local state
+    // TODO: Implement WebSocket chat when backend supports it
+    const username = user?.username || 'Anonymous';
+    setChatMessages(prev => [...prev, {
+      id: Date.now().toString(),
+      userId: currentUserId || '',
+      username,
+      message,
+      timestamp: new Date(),
+    }]);
+  }, [currentUserId, user]);
 
   const handlePlayAgain = useCallback(() => {
     // Navigate to lobby and automatically join queue with same game mode
@@ -226,9 +256,17 @@ export const GameView: React.FC = () => {
         </IconButton>
       </Box>
 
-      {/* Main game area */}
-      <Box sx={{ flex: 1, p: 2, overflow: 'hidden' }}>
-        <PokerTable tableState={tableState} currentUserId={currentUserId} />
+      {/* Main game area with sidebar */}
+      <Box sx={{ flex: 1, p: 2, overflow: 'hidden', display: 'flex', gap: 2 }}>
+        <Box sx={{ flex: 1, overflow: 'hidden' }}>
+          <PokerTable tableState={tableState} currentUserId={currentUserId} />
+        </Box>
+        <GameSidebar
+          history={history}
+          messages={chatMessages}
+          currentUserId={currentUserId}
+          onSendMessage={handleSendChatMessage}
+        />
       </Box>
 
       {/* Action bar */}
@@ -242,30 +280,42 @@ export const GameView: React.FC = () => {
         }}
       >
         <Stack spacing={2}>
-          {/* Raise slider */}
+          {/* Raise amount input */}
           {isMyTurn && (
-            <Box sx={{ px: 2 }}>
-              <Slider
+            <Box sx={{ px: 2, maxWidth: 300, mx: 'auto' }}>
+              <TextField
+                type="number"
+                label="Raise Amount"
                 value={raiseAmount}
-                onChange={(_, value) => setRaiseAmount(value as number)}
-                min={minRaiseAmount}
-                max={maxRaiseAmount}
-                step={10}
-                marks={[
-                  { value: minRaiseAmount, label: `Min: $${minRaiseAmount}` },
-                  { value: maxRaiseAmount / 2, label: `Pot: $${tableState?.pot || 0}` },
-                  { value: maxRaiseAmount, label: `All-in: $${maxRaiseAmount}` },
-                ]}
+                onChange={(e) => setRaiseAmount(Number(e.target.value))}
+                InputProps={{
+                  startAdornment: <InputAdornment position="start">$</InputAdornment>,
+                }}
+                inputProps={{
+                  min: minRaiseAmount,
+                  max: maxRaiseAmount,
+                  step: 10,
+                }}
+                helperText={`Min: $${minRaiseAmount} • Max: $${maxRaiseAmount}`}
+                fullWidth
+                size="small"
                 sx={{
-                  color: COLORS.primary.main,
-                  '& .MuiSlider-thumb': {
-                    background: `linear-gradient(135deg, ${COLORS.primary.main} 0%, ${COLORS.secondary.main} 100%)`,
-                    boxShadow: `0 0 12px ${COLORS.primary.glow}`,
+                  '& .MuiOutlinedInput-root': {
+                    color: COLORS.text.primary,
+                    '& fieldset': {
+                      borderColor: COLORS.border.main,
+                    },
+                    '&:hover fieldset': {
+                      borderColor: COLORS.primary.main,
+                    },
+                    '&.Mui-focused fieldset': {
+                      borderColor: COLORS.primary.main,
+                    },
                   },
-                  '& .MuiSlider-track': {
-                    background: `linear-gradient(90deg, ${COLORS.primary.main} 0%, ${COLORS.secondary.main} 100%)`,
+                  '& .MuiInputLabel-root': {
+                    color: COLORS.text.secondary,
                   },
-                  '& .MuiSlider-markLabel': {
+                  '& .MuiFormHelperText-root': {
                     color: COLORS.text.secondary,
                     fontSize: '10px',
                   },
@@ -330,17 +380,24 @@ export const GameView: React.FC = () => {
         </Stack>
       </Box>
 
-      {/* Winner Display Modal */}
-      {showWinners && tableState?.winners && tableState.winners.length > 0 && (
+      {/* Hand Complete Display - Side panel with auto-hide */}
+      {showHandComplete && tableState?.winners && tableState.winners.length > 0 && !showGameComplete && (
+        <HandCompleteDisplay
+          winners={tableState.winners}
+          pot={tableState.pot}
+          currentUserId={currentUserId}
+          onClose={() => setShowHandComplete(false)}
+        />
+      )}
+
+      {/* Game Complete Display - Full modal */}
+      {showGameComplete && tableState?.winners && tableState.winners.length > 0 && (
         <WinnerDisplay
           winners={tableState.winners}
           pot={tableState.pot}
-          gameComplete={gameComplete}
+          gameComplete={true}
           gameMode={gameMode}
-          onClose={() => {
-            setShowWinners(false);
-            setGameComplete(false);
-          }}
+          onClose={() => setShowGameComplete(false)}
           onPlayAgain={handlePlayAgain}
           onReturnToLobby={handleReturnToLobby}
         />

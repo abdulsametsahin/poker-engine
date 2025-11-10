@@ -74,12 +74,12 @@ export const ShowdownDisplay: React.FC<ShowdownDisplayProps> = memo(({ players, 
                     p: 1.5,
                     background: playerIsWinner
                       ? `linear-gradient(135deg, ${COLORS.success.main}20 0%, ${COLORS.success.dark}15 100%)`
-                      : `${COLORS.background.secondary}80`,
-                    border: `2px solid ${playerIsWinner ? COLORS.success.main : COLORS.border.main}`,
+                      : `linear-gradient(135deg, ${COLORS.danger.main}10 0%, ${COLORS.background.secondary}80 100%)`,
+                    border: `2px solid ${playerIsWinner ? COLORS.success.main : COLORS.danger.main}`,
                     transition: TRANSITIONS.normal,
                     boxShadow: playerIsWinner
                       ? `0 4px 16px ${COLORS.success.glow}`
-                      : 'none',
+                      : `0 2px 8px ${COLORS.danger.main}40`,
                     '@keyframes winner-glow': {
                       '0%, 100%': {
                         boxShadow: `0 4px 16px ${COLORS.success.glow}`,
@@ -141,21 +141,19 @@ export const ShowdownDisplay: React.FC<ShowdownDisplayProps> = memo(({ players, 
                       })}
                     </Stack>
 
-                    {/* Winner indicator */}
-                    {playerIsWinner && (
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          color: COLORS.success.main,
-                          fontWeight: 900,
-                          fontSize: 10,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.05em',
-                        }}
-                      >
-                        Winner
-                      </Typography>
-                    )}
+                    {/* Winner/Loser indicator */}
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        color: playerIsWinner ? COLORS.success.main : COLORS.danger.main,
+                        fontWeight: 900,
+                        fontSize: 10,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                      }}
+                    >
+                      {playerIsWinner ? 'Winner' : 'Loser'}
+                    </Typography>
                   </Stack>
                 </Box>
               </Fade>

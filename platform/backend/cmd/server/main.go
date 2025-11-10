@@ -1121,11 +1121,16 @@ func sendTableState(c *Client, tableID string) {
 	for _, p := range state.Players {
 		if p != nil {
 			playerData := map[string]interface{}{
-				"user_id":     p.PlayerID,
-				"seat_number": p.SeatNumber,
-				"chips":       p.Chips,
-				"status":      string(p.Status),
-				"bet":         p.Bet,
+				"user_id":      p.PlayerID,
+				"username":     p.PlayerName,
+				"seat_number":  p.SeatNumber,
+				"chips":        p.Chips,
+				"status":       string(p.Status),
+				"current_bet":  p.Bet,
+				"folded":       p.Status == pokerModels.StatusFolded,
+				"all_in":       p.Status == pokerModels.StatusAllIn,
+				"is_dealer":    p.IsDealer,
+				"last_action":  string(p.LastAction),
 			}
 
 			if p.PlayerID == c.UserID && len(p.Cards) > 0 {
@@ -1288,11 +1293,16 @@ func broadcastTableState(tableID string) {
 			for _, p := range state.Players {
 				if p != nil {
 					playerData := map[string]interface{}{
-						"user_id":     p.PlayerID,
-						"seat_number": p.SeatNumber,
-						"chips":       p.Chips,
-						"status":      string(p.Status),
-						"bet":         p.Bet,
+						"user_id":      p.PlayerID,
+						"username":     p.PlayerName,
+						"seat_number":  p.SeatNumber,
+						"chips":        p.Chips,
+						"status":       string(p.Status),
+						"current_bet":  p.Bet,
+						"folded":       p.Status == pokerModels.StatusFolded,
+						"all_in":       p.Status == pokerModels.StatusAllIn,
+						"is_dealer":    p.IsDealer,
+						"last_action":  string(p.LastAction),
 					}
 
 					// Show cards to owner or during showdown (hand complete and not folded)
