@@ -35,7 +35,6 @@ import { useWebSocket } from '../contexts/WebSocketContext';
 import { AppLayout } from '../components/common/AppLayout';
 import { Button } from '../components/common/Button';
 import { Card } from '../components/common/Card';
-import { Badge } from '../components/common/Badge';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { COLORS } from '../constants';
 
@@ -99,7 +98,7 @@ export const TournamentDetail: React.FC = () => {
   const { user } = useAuth();
   const { showSuccess, showError } = useToast();
   const navigate = useNavigate();
-  const { addMessageHandler, removeMessageHandler, isConnected } = useWebSocket();
+  const { addMessageHandler, removeMessageHandler } = useWebSocket();
 
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [players, setPlayers] = useState<TournamentPlayer[]>([]);

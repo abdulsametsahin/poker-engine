@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   Box,
   Container,
@@ -15,7 +15,7 @@ import {
   InputLabel,
   IconButton,
 } from '@mui/material';
-import { EmojiEvents, Add, PersonAdd, ContentCopy, Close } from '@mui/icons-material';
+import { EmojiEvents, Add, ContentCopy, Close } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { tournamentAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -51,11 +51,10 @@ export const Tournaments: React.FC = () => {
   const { showSuccess, showError } = useToast();
   const navigate = useNavigate();
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
+  const [registeredTournaments, setRegisteredTournaments] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [initialLoad, setInitialLoad] = useState(true);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [registerDialogOpen, setRegisterDialogOpen] = useState(false);
-  const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
 
   // Form state for tournament creation
   const [formData, setFormData] = useState({
@@ -69,21 +68,40 @@ export const Tournaments: React.FC = () => {
     auto_start_delay: 300,
   });
 
-  useEffect(() => {
-    fetchTournaments();
-  }, []);
-
-  const fetchTournaments = async () => {
+  const fetchTournaments = useCallback(async () => {
     try {
       const response = await tournamentAPI.getTournaments();
-      // Backend returns array directly, not wrapped in { tournaments: [...] }
-      setTournaments(Array.isArray(response.data) ? response.data : []);
+      const tournamentsData = Array.isArray(response.data) ? response.data : [];
+      setTournaments(tournamentsData);
+
+      // Check registration status for each tournament
+      if (user && tournamentsData.length > 0) {
+        const registeredIds = new Set<string>();
+        await Promise.all(
+          tournamentsData.map(async (tournament) => {
+            try {
+              const playersRes = await tournamentAPI.getTournamentPlayers(tournament.id);
+              const isRegistered = playersRes.data?.some((p: any) => p.user_id === user.id);
+              if (isRegistered) {
+                registeredIds.add(tournament.id);
+              }
+            } catch (error) {
+              console.error(`Failed to check registration for tournament ${tournament.id}:`, error);
+            }
+          })
+        );
+        setRegisteredTournaments(registeredIds);
+      }
     } catch (error: any) {
       console.error('Failed to fetch tournaments:', error);
     } finally {
       setInitialLoad(false);
     }
-  };
+  }, [user]);
+
+  useEffect(() => {
+    fetchTournaments();
+  }, [fetchTournaments]);
 
   const handleCreateTournament = async () => {
     try {
@@ -103,31 +121,6 @@ export const Tournaments: React.FC = () => {
     }
   };
 
-  const handleRegisterForTournament = async (tournament: Tournament) => {
-    try {
-      setLoading(true);
-      await tournamentAPI.registerForTournament(tournament.id);
-      showSuccess('Successfully registered for tournament!');
-      fetchTournaments();
-    } catch (error: any) {
-      showError(error.response?.data?.error || 'Failed to register for tournament');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleUnregisterFromTournament = async (tournamentId: string) => {
-    try {
-      setLoading(true);
-      await tournamentAPI.unregisterFromTournament(tournamentId);
-      showSuccess('Unregistered from tournament');
-      fetchTournaments();
-    } catch (error: any) {
-      showError(error.response?.data?.error || 'Failed to unregister');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const copyTournamentCode = (code: string) => {
     navigator.clipboard.writeText(code);
@@ -137,15 +130,6 @@ export const Tournaments: React.FC = () => {
   const getStructureName = (structureJson: string): string => {
     try {
       const parsed = JSON.parse(structureJson);
-      return parsed.name || 'Unknown';
-    } catch {
-      return 'Unknown';
-    }
-  };
-
-  const getPrizeStructureName = (prizeStructureJson: string): string => {
-    try {
-      const parsed = JSON.parse(prizeStructureJson);
       return parsed.name || 'Unknown';
     } catch {
       return 'Unknown';
@@ -222,6 +206,11 @@ export const Tournaments: React.FC = () => {
                         <Badge variant="info" size="small">
                           {tournament.current_players}/{tournament.max_players} Players
                         </Badge>
+                        {registeredTournaments.has(tournament.id) && (
+                          <Badge variant="success" size="small">
+                            REGISTERED
+                          </Badge>
+                        )}
                       </Stack>
                     </Box>
 
@@ -278,20 +267,6 @@ export const Tournaments: React.FC = () => {
                         <ContentCopy fontSize="small" />
                       </IconButton>
                     </Box>
-
-                    {tournament.status === 'registering' && (
-                      <Button
-                        fullWidth
-                        startIcon={<PersonAdd />}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleRegisterForTournament(tournament);
-                        }}
-                        disabled={loading}
-                      >
-                        Register
-                      </Button>
-                    )}
                   </Stack>
                 </Card>
               </Box>
