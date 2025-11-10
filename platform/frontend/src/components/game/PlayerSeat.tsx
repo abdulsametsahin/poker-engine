@@ -67,6 +67,40 @@ export const PlayerSeat: React.FC<PlayerSeatProps> = memo(({
         opacity: player.folded ? 0.5 : 1,
       }}
     >
+      {/* Felt seat pad circle - behind everything */}
+      <Box
+        sx={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          width: 140,
+          height: 140,
+          borderRadius: '50%',
+          background: 'radial-gradient(circle at 30% 30%, rgba(16, 133, 77, 0.6) 0%, rgba(6, 78, 59, 0.5) 100%)',
+          boxShadow: `
+            inset 0 4px 8px rgba(0, 0, 0, 0.3),
+            inset 0 -2px 4px rgba(255, 255, 255, 0.1),
+            0 8px 16px rgba(0, 0, 0, 0.4)
+          `,
+          border: '2px solid rgba(6, 78, 59, 0.8)',
+          zIndex: -1,
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            inset: 8,
+            borderRadius: '50%',
+            background: `repeating-linear-gradient(
+              45deg,
+              transparent,
+              transparent 2px,
+              rgba(0, 0, 0, 0.05) 2px,
+              rgba(0, 0, 0, 0.05) 4px
+            )`,
+          },
+        }}
+      />
+
       {/* Glow effect when active */}
       {isActive && (
         <Box
@@ -97,24 +131,46 @@ export const PlayerSeat: React.FC<PlayerSeatProps> = memo(({
           height: '100%',
           borderRadius: RADIUS.md,
           background: isActive
-            ? `linear-gradient(135deg, rgba(124, 58, 237, 0.15) 0%, rgba(6, 182, 212, 0.15) 100%)`
-            : 'rgba(255, 255, 255, 0.05)',
+            ? `linear-gradient(135deg, rgba(124, 58, 237, 0.2) 0%, rgba(6, 182, 212, 0.2) 100%)`
+            : 'rgba(30, 30, 30, 0.85)',
           backdropFilter: 'blur(10px)',
           border: isActive
             ? `2px solid ${COLORS.primary.main}`
             : isCurrentUser
             ? `2px solid ${COLORS.accent.main}`
-            : `1px solid ${COLORS.border.main}`,
+            : `1px solid rgba(255, 255, 255, 0.1)`,
           boxShadow: isActive
-            ? `0 0 20px ${COLORS.primary.glow}`
+            ? `
+              0 0 20px ${COLORS.primary.glow},
+              0 8px 16px rgba(0, 0, 0, 0.4),
+              0 4px 8px rgba(0, 0, 0, 0.3)
+            `
             : isCurrentUser
-            ? `0 0 12px ${COLORS.accent.glow}`
-            : 'none',
+            ? `
+              0 0 12px ${COLORS.accent.glow},
+              0 6px 12px rgba(0, 0, 0, 0.4),
+              0 3px 6px rgba(0, 0, 0, 0.3)
+            `
+            : `
+              0 6px 12px rgba(0, 0, 0, 0.4),
+              0 3px 6px rgba(0, 0, 0, 0.3),
+              0 1px 3px rgba(0, 0, 0, 0.2)
+            `,
           p: 1.5,
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
           gap: 1,
+          transition: TRANSITIONS.normal,
+
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            inset: 0,
+            borderRadius: RADIUS.md,
+            background: 'linear-gradient(145deg, rgba(255, 255, 255, 0.05) 0%, transparent 50%, rgba(0, 0, 0, 0.1) 100%)',
+            pointerEvents: 'none',
+          },
         }}
       >
         {/* Action Timer */}

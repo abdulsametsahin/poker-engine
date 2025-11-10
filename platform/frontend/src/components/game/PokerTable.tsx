@@ -1,9 +1,11 @@
-import React, { memo } from 'react';
+import React, { memo, useMemo } from 'react';
 import { Box, Stack, Typography } from '@mui/material';
 import { PlayerSeat } from './PlayerSeat';
 import { PlayingCard } from './PlayingCard';
 import { ShowdownDisplay } from './ShowdownDisplay';
 import { LoadingSpinner } from '../common/LoadingSpinner';
+import { OvalTableSVG } from './OvalTableSVG';
+import { DealerButton } from './DealerButton';
 import { COLORS, RADIUS, SPACING, TRANSITIONS } from '../../constants';
 import { Player, WinnerInfo } from '../../types';
 import { getBettingRoundName } from '../../utils';
@@ -30,6 +32,68 @@ export const PokerTable: React.FC<PokerTableProps> = memo(({
   tableState,
   currentUserId,
 }) => {
+  const {
+    players = [],
+    community_cards = [],
+    pot = 0,
+    current_turn,
+    status,
+    betting_round,
+    current_bet = 0,
+    action_deadline,
+    winners = [],
+  } = tableState || {};
+
+  // Calculate positions for oval perimeter layout
+  // Current user is always positioned at the bottom, others arranged clockwise
+  const { getPlayerPosition, getDealerButtonPosition } = useMemo(() => {
+    const currentUserIndex = players.findIndex(p => p?.user_id === currentUserId);
+
+    const getPlayerPosition = (index: number, total: number) => {
+      // Calculate offset so current user is at bottom (90 degrees)
+      let adjustedIndex = index;
+      if (currentUserIndex !== -1) {
+        adjustedIndex = (index - currentUserIndex + total) % total;
+      }
+
+      // Start from bottom (π/2) and go counter-clockwise
+      const angle = (adjustedIndex / total) * 2 * Math.PI + Math.PI / 2;
+
+      // Adjusted radius to match oval table perimeter
+      // SVG viewBox is 1200x800, felt area is ~480x310, so positions at ~50-52% radius
+      const radiusX = 42; // Horizontal spread (slightly tighter)
+      const radiusY = 38; // Vertical spread (slightly larger for oval)
+
+      return {
+        left: `${50 + radiusX * Math.cos(angle)}%`,
+        top: `${50 + radiusY * Math.sin(angle)}%`,
+        transform: 'translate(-50%, -50%)',
+      };
+    };
+
+    // Position dealer button near the dealer (offset slightly inward from seat)
+    const getDealerButtonPosition = (dealerIndex: number, total: number) => {
+      let adjustedIndex = dealerIndex;
+      if (currentUserIndex !== -1) {
+        adjustedIndex = (dealerIndex - currentUserIndex + total) % total;
+      }
+
+      const angle = (adjustedIndex / total) * 2 * Math.PI + Math.PI / 2;
+      const radiusX = 35; // Closer to center than player seat
+      const radiusY = 31;
+
+      return {
+        left: `${50 + radiusX * Math.cos(angle)}%`,
+        top: `${50 + radiusY * Math.sin(angle)}%`,
+      };
+    };
+
+    return { getPlayerPosition, getDealerButtonPosition };
+  }, [players, currentUserId]);
+
+  // Find dealer index
+  const dealerIndex = players.findIndex(p => p?.is_dealer);
+
   if (!tableState) {
     return (
       <Box
@@ -45,62 +109,34 @@ export const PokerTable: React.FC<PokerTableProps> = memo(({
     );
   }
 
-  const {
-    players = [],
-    community_cards = [],
-    pot = 0,
-    current_turn,
-    status,
-    betting_round,
-    current_bet = 0,
-    action_deadline,
-    winners = [],
-  } = tableState;
-
-  // Calculate positions for circular layout
-  const getPlayerPosition = (index: number, total: number) => {
-    // Arrange players in a circle
-    const angle = (index / total) * 2 * Math.PI - Math.PI / 2; // Start from top
-    const radiusX = 45; // Horizontal spread
-    const radiusY = 35; // Vertical spread
-
-    return {
-      left: `${50 + radiusX * Math.cos(angle)}%`,
-      top: `${50 + radiusY * Math.sin(angle)}%`,
-      transform: 'translate(-50%, -50%)',
-    };
-  };
-
   return (
     <Box
       sx={{
         height: '100%',
+        width: '100%',
         position: 'relative',
-        borderRadius: RADIUS.lg,
-        background: `linear-gradient(135deg, rgba(11, 107, 62, 0.4) 0%, rgba(6, 78, 59, 0.3) 100%)`,
-        border: `3px solid ${COLORS.success.main}40`,
-        overflow: 'hidden',
-        '&::before': {
-          content: '""',
-          position: 'absolute',
-          inset: 0,
-          background: 'radial-gradient(ellipse at center, rgba(16, 185, 129, 0.08) 0%, transparent 70%)',
-          pointerEvents: 'none',
-        },
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'transparent',
+        overflow: 'visible',
       }}
     >
-      {/* Felt texture pattern */}
+      {/* SVG Oval Poker Table */}
       <Box
         sx={{
           position: 'absolute',
-          inset: 0,
-          backgroundImage: `
-            repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px),
-            repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px)
-          `,
-          pointerEvents: 'none',
+          width: '90%',
+          height: '90%',
+          maxWidth: '1200px',
+          maxHeight: '800px',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
         }}
-      />
+      >
+        <OvalTableSVG />
+      </Box>
 
       {/* Center area */}
       <Box
@@ -243,6 +279,13 @@ export const PokerTable: React.FC<PokerTableProps> = memo(({
           </Box>
         );
       })}
+
+      {/* Dealer Button */}
+      {dealerIndex !== -1 && players.length > 1 && (
+        <DealerButton
+          position={getDealerButtonPosition(dealerIndex, players.length)}
+        />
+      )}
 
       {/* Status messages */}
       {status === 'waiting' && (
