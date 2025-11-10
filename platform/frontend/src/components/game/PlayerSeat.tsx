@@ -1,11 +1,9 @@
 import React, { memo } from 'react';
 import { Box, Stack, Typography } from '@mui/material';
-import { Avatar } from '../common/Avatar';
-import { Chip } from '../common/Chip';
 import { Badge } from '../common/Badge';
 import { PlayingCard } from './PlayingCard';
 import ActionTimer from '../ActionTimer';
-import { COLORS, SPACING, TRANSITIONS, RADIUS } from '../../constants';
+import { COLORS, TRANSITIONS, RADIUS } from '../../constants';
 import { Player } from '../../types';
 import { formatUsername } from '../../utils';
 
@@ -28,27 +26,25 @@ export const PlayerSeat: React.FC<PlayerSeatProps> = memo(({
     return (
       <Box
         sx={{
-          width: 120,
-          height: 160,
-          borderRadius: RADIUS.md,
-          border: `2px dashed ${COLORS.border.main}`,
+          width: 90,
+          height: 60,
+          borderRadius: RADIUS.sm,
+          border: `1px dashed ${COLORS.border.main}`,
           background: 'rgba(255, 255, 255, 0.02)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          opacity: 0.4,
+          opacity: 0.3,
         }}
       >
         <Typography
           variant="caption"
           sx={{
             color: COLORS.text.disabled,
-            fontSize: '10px',
+            fontSize: '9px',
             textAlign: 'center',
           }}
         >
-          SEAT {position}
-          <br />
           EMPTY
         </Typography>
       </Box>
@@ -60,169 +56,95 @@ export const PlayerSeat: React.FC<PlayerSeatProps> = memo(({
   return (
     <Box
       sx={{
-        width: 120,
-        height: 160,
+        width: 90,
+        height: 60,
         position: 'relative',
         transition: TRANSITIONS.normal,
         opacity: player.folded ? 0.5 : 1,
       }}
     >
-      {/* Felt seat pad circle - behind everything */}
-      <Box
-        sx={{
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          width: 140,
-          height: 140,
-          borderRadius: '50%',
-          background: 'radial-gradient(circle at 30% 30%, rgba(16, 133, 77, 0.6) 0%, rgba(6, 78, 59, 0.5) 100%)',
-          boxShadow: `
-            inset 0 4px 8px rgba(0, 0, 0, 0.3),
-            inset 0 -2px 4px rgba(255, 255, 255, 0.1),
-            0 8px 16px rgba(0, 0, 0, 0.4)
-          `,
-          border: '2px solid rgba(6, 78, 59, 0.8)',
-          zIndex: -1,
-          '&::before': {
-            content: '""',
-            position: 'absolute',
-            inset: 8,
-            borderRadius: '50%',
-            background: `repeating-linear-gradient(
-              45deg,
-              transparent,
-              transparent 2px,
-              rgba(0, 0, 0, 0.05) 2px,
-              rgba(0, 0, 0, 0.05) 4px
-            )`,
-          },
-        }}
-      />
-
-      {/* Glow effect when active */}
-      {isActive && (
+      {/* Action Timer */}
+      {isActive && actionDeadline && (
         <Box
           sx={{
             position: 'absolute',
-            inset: -4,
-            borderRadius: RADIUS.md,
-            background: `linear-gradient(135deg, ${COLORS.primary.main} 0%, ${COLORS.secondary.main} 100%)`,
-            opacity: 0.3,
-            filter: 'blur(8px)',
-            '@keyframes pulse-glow': {
-              '0%, 100%': {
-                opacity: 0.3,
-              },
-              '50%': {
-                opacity: 0.6,
-              },
-            },
-            animation: 'pulse-glow 2s ease-in-out infinite',
+            top: -28,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: '110%',
+            zIndex: 30,
           }}
-        />
+        >
+          <ActionTimer deadline={actionDeadline} totalTime={30} />
+        </Box>
       )}
 
-      {/* Main container */}
+      {/* Main container - minimal design */}
       <Box
         sx={{
           position: 'relative',
           height: '100%',
-          borderRadius: RADIUS.md,
+          borderRadius: RADIUS.sm,
           background: isActive
-            ? `linear-gradient(135deg, rgba(124, 58, 237, 0.2) 0%, rgba(6, 182, 212, 0.2) 100%)`
-            : 'rgba(30, 30, 30, 0.85)',
-          backdropFilter: 'blur(10px)',
+            ? `linear-gradient(135deg, rgba(124, 58, 237, 0.15) 0%, rgba(6, 182, 212, 0.15) 100%)`
+            : 'rgba(0, 0, 0, 0.4)',
           border: isActive
             ? `2px solid ${COLORS.primary.main}`
             : isCurrentUser
             ? `2px solid ${COLORS.accent.main}`
-            : `1px solid rgba(255, 255, 255, 0.1)`,
+            : `1px solid rgba(255, 255, 255, 0.15)`,
           boxShadow: isActive
-            ? `
-              0 0 20px ${COLORS.primary.glow},
-              0 8px 16px rgba(0, 0, 0, 0.4),
-              0 4px 8px rgba(0, 0, 0, 0.3)
-            `
-            : isCurrentUser
-            ? `
-              0 0 12px ${COLORS.accent.glow},
-              0 6px 12px rgba(0, 0, 0, 0.4),
-              0 3px 6px rgba(0, 0, 0, 0.3)
-            `
-            : `
-              0 6px 12px rgba(0, 0, 0, 0.4),
-              0 3px 6px rgba(0, 0, 0, 0.3),
-              0 1px 3px rgba(0, 0, 0, 0.2)
-            `,
-          p: 1.5,
+            ? `0 0 12px ${COLORS.primary.glow}`
+            : 'none',
+          px: 1.5,
+          py: 1,
           display: 'flex',
           flexDirection: 'column',
-          alignItems: 'center',
-          gap: 1,
+          justifyContent: 'center',
+          gap: 0.5,
           transition: TRANSITIONS.normal,
-
-          '&::before': {
-            content: '""',
-            position: 'absolute',
-            inset: 0,
-            borderRadius: RADIUS.md,
-            background: 'linear-gradient(145deg, rgba(255, 255, 255, 0.05) 0%, transparent 50%, rgba(0, 0, 0, 0.1) 100%)',
-            pointerEvents: 'none',
-          },
         }}
       >
-        {/* Action Timer */}
-        {isActive && actionDeadline && (
-          <Box
-            sx={{
-              position: 'absolute',
-              top: -32,
-              left: '50%',
-              transform: 'translateX(-50%)',
-              width: '110%',
-              zIndex: 30,
-            }}
-          >
-            <ActionTimer deadline={actionDeadline} totalTime={30} />
-          </Box>
-        )}
-
         {/* Status badges */}
         {player.folded && (
-          <Badge variant="danger" size="small" sx={{ position: 'absolute', top: 4, right: 4 }}>
+          <Badge variant="danger" size="small" sx={{ position: 'absolute', top: -8, right: -8, fontSize: '8px' }}>
             FOLD
           </Badge>
         )}
         {player.all_in && !player.folded && (
-          <Badge variant="warning" size="small" sx={{ position: 'absolute', top: 4, right: 4 }}>
-            ALL-IN
+          <Badge variant="warning" size="small" sx={{ position: 'absolute', top: -8, right: -8, fontSize: '8px' }}>
+            ALL IN
           </Badge>
         )}
-        {isCurrentUser && !isActive && !player.folded && (
-          <Badge variant="primary" size="small" sx={{ position: 'absolute', top: 4, left: 4 }}>
-            YOU
-          </Badge>
+        {player.is_dealer && (
+          <Box
+            sx={{
+              position: 'absolute',
+              top: -10,
+              left: -10,
+              width: 20,
+              height: 20,
+              borderRadius: '50%',
+              background: COLORS.accent.main,
+              border: `2px solid ${COLORS.background.primary}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '10px',
+              fontWeight: 'bold',
+            }}
+          >
+            D
+          </Box>
         )}
-
-        {/* Avatar with dealer button */}
-        <Box sx={{ position: 'relative' }}>
-          <Avatar
-            username={player.username || player.user_id}
-            size="medium"
-            online={isActive}
-            dealer={player.is_dealer}
-          />
-        </Box>
 
         {/* Username */}
         <Typography
           variant="caption"
           sx={{
-            color: COLORS.text.primary,
+            color: isCurrentUser ? COLORS.accent.main : COLORS.text.primary,
             fontSize: '11px',
-            fontWeight: 600,
+            fontWeight: isCurrentUser ? 700 : 600,
             textAlign: 'center',
             maxWidth: '100%',
             overflow: 'hidden',
@@ -234,7 +156,17 @@ export const PlayerSeat: React.FC<PlayerSeatProps> = memo(({
         </Typography>
 
         {/* Chips */}
-        <Chip amount={player.chips} variant="default" size="small" />
+        <Typography
+          variant="caption"
+          sx={{
+            color: COLORS.text.secondary,
+            fontSize: '10px',
+            fontWeight: 600,
+            textAlign: 'center',
+          }}
+        >
+          ${player.chips}
+        </Typography>
 
         {/* Player cards - show only for current user */}
         {isCurrentUser && player.cards && player.cards.length > 0 && (
@@ -243,7 +175,7 @@ export const PlayerSeat: React.FC<PlayerSeatProps> = memo(({
             spacing={0.5}
             sx={{
               position: 'absolute',
-              bottom: -50,
+              bottom: -45,
               left: '50%',
               transform: 'translateX(-50%)',
               zIndex: 10,
@@ -265,15 +197,14 @@ export const PlayerSeat: React.FC<PlayerSeatProps> = memo(({
           <Box
             sx={{
               position: 'absolute',
-              bottom: -24,
+              bottom: -20,
               left: '50%',
               transform: 'translateX(-50%)',
               px: 1,
-              py: 0.5,
+              py: 0.25,
               borderRadius: RADIUS.sm,
-              background: `linear-gradient(135deg, ${COLORS.info.main} 0%, ${COLORS.info.dark} 100%)`,
-              border: `1px solid ${COLORS.info.main}`,
-              boxShadow: `0 2px 8px ${COLORS.info.glow}`,
+              background: COLORS.info.main,
+              boxShadow: `0 2px 6px ${COLORS.info.glow}`,
               zIndex: 5,
             }}
           >
@@ -281,7 +212,7 @@ export const PlayerSeat: React.FC<PlayerSeatProps> = memo(({
               variant="caption"
               sx={{
                 color: COLORS.text.primary,
-                fontSize: '10px',
+                fontSize: '9px',
                 fontWeight: 700,
               }}
             >
@@ -296,10 +227,13 @@ export const PlayerSeat: React.FC<PlayerSeatProps> = memo(({
             variant="caption"
             sx={{
               position: 'absolute',
-              bottom: 4,
-              fontSize: '9px',
-              color: COLORS.text.secondary,
+              bottom: -18,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              fontSize: '8px',
+              color: COLORS.text.disabled,
               textTransform: 'uppercase',
+              whiteSpace: 'nowrap',
             }}
           >
             {player.last_action}

@@ -204,7 +204,11 @@ export const Tournaments: React.FC = () => {
         {tournaments.length > 0 ? (
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 3 }}>
             {tournaments.map((tournament) => (
-              <Box key={tournament.id}>
+              <Box
+                key={tournament.id}
+                onClick={() => navigate(`/tournaments/${tournament.id}`)}
+                sx={{ cursor: 'pointer', transition: 'transform 0.2s', '&:hover': { transform: 'translateY(-4px)' } }}
+              >
                 <Card variant="glass">
                   <Stack spacing={2}>
                     <Box>
@@ -265,7 +269,10 @@ export const Tournaments: React.FC = () => {
                       </Typography>
                       <IconButton
                         size="small"
-                        onClick={() => copyTournamentCode(tournament.tournament_code)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          copyTournamentCode(tournament.tournament_code);
+                        }}
                         sx={{ ml: 'auto' }}
                       >
                         <ContentCopy fontSize="small" />
@@ -276,7 +283,10 @@ export const Tournaments: React.FC = () => {
                       <Button
                         fullWidth
                         startIcon={<PersonAdd />}
-                        onClick={() => handleRegisterForTournament(tournament)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRegisterForTournament(tournament);
+                        }}
                         disabled={loading}
                       >
                         Register
