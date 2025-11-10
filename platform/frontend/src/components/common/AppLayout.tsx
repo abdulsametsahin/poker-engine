@@ -1,7 +1,7 @@
 import React from 'react';
-import { AppBar, Toolbar, Box, IconButton, Menu, MenuItem, Typography } from '@mui/material';
-import { AccountCircle, Logout, Settings as SettingsIcon } from '@mui/icons-material';
-import { useNavigate } from 'react-router-dom';
+import { AppBar, Toolbar, Box, IconButton, Menu, MenuItem, Typography, Button as MuiButton } from '@mui/material';
+import { AccountCircle, Logout, Settings as SettingsIcon, Home, EmojiEvents } from '@mui/icons-material';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useWebSocket } from '../../contexts/WebSocketContext';
 import { Logo } from './Logo';
@@ -15,6 +15,7 @@ interface AppLayoutProps {
 
 export const AppLayout: React.FC<AppLayoutProps> = ({ children, showHeader = true }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, logout } = useAuth();
   const { isConnected } = useWebSocket();
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
@@ -58,6 +59,32 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children, showHeader = tru
           <Toolbar>
             {/* Logo */}
             <Logo size="small" onClick={handleLogoClick} />
+
+            {/* Navigation */}
+            <Box sx={{ ml: 4, display: 'flex', gap: 1 }}>
+              <MuiButton
+                startIcon={<Home />}
+                onClick={() => navigate(ROUTES.LOBBY)}
+                sx={{
+                  color: location.pathname === ROUTES.LOBBY ? COLORS.primary.main : 'text.secondary',
+                  fontWeight: location.pathname === ROUTES.LOBBY ? 700 : 500,
+                  '&:hover': { background: COLORS.background.secondary },
+                }}
+              >
+                Lobby
+              </MuiButton>
+              <MuiButton
+                startIcon={<EmojiEvents />}
+                onClick={() => navigate('/tournaments')}
+                sx={{
+                  color: location.pathname === '/tournaments' ? COLORS.primary.main : 'text.secondary',
+                  fontWeight: location.pathname === '/tournaments' ? 700 : 500,
+                  '&:hover': { background: COLORS.background.secondary },
+                }}
+              >
+                Tournaments
+              </MuiButton>
+            </Box>
 
             {/* Spacer */}
             <Box sx={{ flexGrow: 1 }} />

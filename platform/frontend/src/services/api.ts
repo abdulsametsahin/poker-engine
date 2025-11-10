@@ -38,4 +38,23 @@ export const matchmakingAPI = {
   leave: () => api.post('/matchmaking/leave'),
 };
 
+export const tournamentAPI = {
+  // Tournament management
+  createTournament: (data: any) => api.post('/tournaments', data),
+  getTournaments: () => api.get('/tournaments'),
+  getTournament: (id: string) => api.get(`/tournaments/${id}`),
+  getTournamentByCode: (code: string) => api.get(`/tournaments/code/${code}`),
+  cancelTournament: (id: string) => api.delete(`/tournaments/${id}`),
+  startTournament: (id: string) => api.post(`/tournaments/${id}/start`),
+
+  // Player registration
+  registerForTournament: (id: string) => api.post(`/tournaments/${id}/register`),
+  unregisterFromTournament: (id: string) => api.post(`/tournaments/${id}/unregister`),
+  getTournamentPlayers: (id: string) => api.get(`/tournaments/${id}/players`),
+
+  // Prize and standings
+  getTournamentPrizes: (id: string) => api.get(`/tournaments/${id}/prizes`),
+  getTournamentStandings: (id: string) => api.get(`/tournaments/${id}/standings`),
+};
+
 export default api;
