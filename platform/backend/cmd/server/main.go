@@ -1818,8 +1818,45 @@ func handleTournamentEngineEvent(tableID string, event pokerModels.Event) {
 		log.Printf("Hand started on tournament table %s", tableID)
 	case "handComplete":
 		log.Printf("Hand completed on tournament table %s", tableID)
+
 		// Check for player eliminations
 		go checkTournamentEliminations(tableID)
+
+		// Broadcast current state
+		broadcastTableState(tableID)
+
+		// Start next hand after delay
+		go func() {
+			time.Sleep(5 * time.Second)
+
+			bridge.mu.RLock()
+			table, exists := bridge.tables[tableID]
+			bridge.mu.RUnlock()
+
+			if exists {
+				state := table.GetState()
+				activeCount := 0
+				for _, p := range state.Players {
+					if p != nil && p.Status != pokerModels.StatusSittingOut && p.Chips > 0 {
+						activeCount++
+					}
+				}
+
+				if activeCount >= 2 {
+					log.Printf("Starting next hand on tournament table %s with %d active players", tableID, activeCount)
+					err := table.StartGame()
+					if err != nil {
+						log.Printf("Failed to start next hand on tournament table %s: %v", tableID, err)
+					} else {
+						broadcastTableState(tableID)
+					}
+				} else {
+					log.Printf("Not enough active players (%d) to start next hand on tournament table %s", activeCount, tableID)
+				}
+			}
+		}()
+		return // Return early since we already broadcasted
+
 	case "gameComplete":
 		handleTournamentTableComplete(tableID)
 	}
