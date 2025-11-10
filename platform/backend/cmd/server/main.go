@@ -33,6 +33,7 @@ var (
 	blindManager        *tournament.BlindManager
 	eliminationTracker  *tournament.EliminationTracker
 	consolidator        *tournament.Consolidator
+	prizeDistributor    *tournament.PrizeDistributor
 	upgrader            = websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool { return true },
 	}
@@ -131,6 +132,10 @@ func main() {
 	blindManager = tournament.NewBlindManager(database.DB)
 	eliminationTracker = tournament.NewEliminationTracker(database.DB)
 	consolidator = tournament.NewConsolidator(database.DB)
+	prizeDistributor = tournament.NewPrizeDistributor(database.DB)
+
+	// Connect prize distributor to elimination tracker
+	eliminationTracker.SetPrizeDistributor(prizeDistributor)
 
 	// Set callback for when tournaments start automatically
 	tournamentStarter.SetOnStartCallback(func(tournamentID string) {
@@ -157,6 +162,11 @@ func main() {
 	// Set callback for table consolidation
 	consolidator.SetOnConsolidationCallback(func(tournamentID string) {
 		go handleTableConsolidation(tournamentID)
+	})
+
+	// Set callback for prize distribution
+	prizeDistributor.SetOnPrizeDistributedCallback(func(tournamentID, userID string, amount int) {
+		go handlePrizeDistributed(tournamentID, userID, amount)
 	})
 
 	// Start tournament services in background
@@ -210,6 +220,8 @@ func main() {
 		authorized.DELETE("/api/tournaments/:id", handleCancelTournament)
 		authorized.GET("/api/tournaments/:id/players", handleGetTournamentPlayers)
 		authorized.POST("/api/tournaments/:id/start", handleStartTournament)
+		authorized.GET("/api/tournaments/:id/prizes", handleGetTournamentPrizes)
+		authorized.GET("/api/tournaments/:id/standings", handleGetTournamentStandings)
 	}
 
 	// Public tournament endpoint (for shareable links)
@@ -1687,6 +1699,36 @@ func handleStartTournament(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Tournament started"})
 }
 
+func handleGetTournamentPrizes(c *gin.Context) {
+	tournamentID := c.Param("id")
+
+	prizes, err := prizeDistributor.GetPrizeInfo(tournamentID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Check if prizes have been distributed
+	distributed, _ := prizeDistributor.HasPrizesBeenDistributed(tournamentID)
+
+	c.JSON(http.StatusOK, gin.H{
+		"prizes":      prizes,
+		"distributed": distributed,
+	})
+}
+
+func handleGetTournamentStandings(c *gin.Context) {
+	tournamentID := c.Param("id")
+
+	standings, err := eliminationTracker.GetTournamentStandings(tournamentID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"standings": standings})
+}
+
 func initializeTournamentTables(tournamentID string) {
 	tableInit := tournament.NewTableInitializer(database.DB)
 
@@ -1998,6 +2040,40 @@ func handleTournamentComplete(tournamentID string) {
 	}
 
 	log.Printf("Tournament %s: Completed! Winner: %s", tournamentID, winnerName)
+}
+
+func handlePrizeDistributed(tournamentID, userID string, amount int) {
+	// Get user details
+	var user models.User
+	username := userID
+	if err := database.Where("id = ?", userID).First(&user).Error; err == nil {
+		username = user.Username
+	}
+
+	// Broadcast prize awarded
+	message := WSMessage{
+		Type: "prize_awarded",
+		Payload: map[string]interface{}{
+			"tournament_id": tournamentID,
+			"user_id":       userID,
+			"username":      username,
+			"amount":        amount,
+		},
+	}
+
+	data, _ := json.Marshal(message)
+
+	bridge.mu.RLock()
+	defer bridge.mu.RUnlock()
+
+	for _, client := range bridge.clients {
+		select {
+		case client.Send <- data:
+		default:
+		}
+	}
+
+	log.Printf("Tournament %s: Prize distributed to %s: %d credits", tournamentID, username, amount)
 }
 
 func handleTableConsolidation(tournamentID string) {

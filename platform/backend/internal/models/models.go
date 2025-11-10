@@ -87,6 +87,7 @@ type Tournament struct {
 	CreatedAt             time.Time      `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 	StartedAt             *time.Time     `gorm:"column:started_at" json:"started_at,omitempty"`
 	CompletedAt           *time.Time     `gorm:"column:completed_at" json:"completed_at,omitempty"`
+	PrizesDistributed     bool           `gorm:"column:prizes_distributed;default:false" json:"prizes_distributed"`
 	DeletedAt             gorm.DeletedAt `gorm:"column:deleted_at;index" json:"-"`
 }
 

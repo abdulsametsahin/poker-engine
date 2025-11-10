@@ -13,6 +13,7 @@ import (
 // EliminationTracker handles player eliminations and tournament progression
 type EliminationTracker struct {
 	db                        *gorm.DB
+	prizeDistributor          *PrizeDistributor
 	onPlayerEliminatedCallback func(tournamentID, userID string, position int)
 	onTournamentCompleteCallback func(tournamentID string)
 }
@@ -22,6 +23,11 @@ func NewEliminationTracker(db *gorm.DB) *EliminationTracker {
 	return &EliminationTracker{
 		db: db,
 	}
+}
+
+// SetPrizeDistributor sets the prize distributor for automatic prize distribution
+func (et *EliminationTracker) SetPrizeDistributor(pd *PrizeDistributor) {
+	et.prizeDistributor = pd
 }
 
 // SetOnPlayerEliminatedCallback sets the callback for player elimination
@@ -204,6 +210,17 @@ func (et *EliminationTracker) CompleteTournament(tournamentID string) error {
 	}
 
 	log.Printf("Tournament %s: Completed! Winner: %s", tournamentID, winner.UserID)
+
+	// Distribute prizes if prize distributor is set
+	if et.prizeDistributor != nil {
+		// Check if prizes haven't been distributed yet
+		distributed, err := et.prizeDistributor.HasPrizesBeenDistributed(tournamentID)
+		if err == nil && !distributed {
+			if err := et.prizeDistributor.DistributePrizes(tournamentID); err != nil {
+				log.Printf("Error distributing prizes for tournament %s: %v", tournamentID, err)
+			}
+		}
+	}
 
 	// Call callback
 	if et.onTournamentCompleteCallback != nil {
