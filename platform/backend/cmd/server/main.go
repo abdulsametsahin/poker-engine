@@ -1775,17 +1775,31 @@ func initializeTournamentTables(tournamentID string) {
 		// Start the game
 		go func(t *engine.Table, tid string) {
 			time.Sleep(2 * time.Second)
+			log.Printf("Attempting to start game for tournament table %s", tid)
+
+			// Check current state before starting
+			state := t.GetState()
+			log.Printf("Table %s pre-start state: status=%s, players=%d", tid, state.Status, len(state.Players))
+
 			if err := t.StartGame(); err != nil {
-				log.Printf("Error starting game for table %s: %v", tid, err)
+				log.Printf("❌ Error starting game for table %s: %v", tid, err)
 			} else {
+				log.Printf("✓ Game started successfully for table %s", tid)
+
 				// Update database table status to playing
 				now := time.Now()
-				database.Model(&models.Table{}).Where("id = ?", tid).Updates(map[string]interface{}{
+				result := database.Model(&models.Table{}).Where("id = ?", tid).Updates(map[string]interface{}{
 					"status":     "playing",
 					"started_at": &now,
 				})
-				log.Printf("Tournament table %s status updated to playing", tid)
+				if result.Error != nil {
+					log.Printf("❌ Error updating database status for table %s: %v", tid, result.Error)
+				} else {
+					log.Printf("✓ Database updated: table %s status=playing (rows affected: %d)", tid, result.RowsAffected)
+				}
+
 				broadcastTableState(tid)
+				log.Printf("✓ Broadcast sent for table %s", tid)
 			}
 		}(table, tableID)
 
