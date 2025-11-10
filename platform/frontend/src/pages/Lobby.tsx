@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Container, Typography, Stack, Dialog, DialogContent, LinearProgress, Tabs, Tab, IconButton } from '@mui/material';
 import { PlayArrow, Group, EmojiEvents, History, Close, AccessTime } from '@mui/icons-material';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { tableAPI, matchmakingAPI } from '../services/api';
 import { useWebSocket } from '../contexts/WebSocketContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -152,6 +152,7 @@ const GameModeCard: React.FC<GameModeCardProps> = ({
 
 export const Lobby: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { isConnected, lastMessage, addMessageHandler, removeMessageHandler } = useWebSocket();
   const { user } = useAuth();
   const { showError, showSuccess } = useToast();
@@ -236,6 +237,16 @@ export const Lobby: React.FC = () => {
       setLoading(false);
     }
   };
+
+  // Auto-join queue if navigated from "Play Again"
+  useEffect(() => {
+    const state = location.state as { autoJoinQueue?: boolean; gameMode?: string };
+    if (state?.autoJoinQueue && state?.gameMode) {
+      handleQuickMatch(state.gameMode);
+      // Clear the state
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location]);
 
   const handleCancelMatchmaking = async () => {
     try {

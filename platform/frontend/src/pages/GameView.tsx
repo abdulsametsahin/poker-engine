@@ -6,7 +6,7 @@ import { useWebSocket } from '../contexts/WebSocketContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { PokerTable } from '../components/game/PokerTable';
-import { WinnerDisplay, GameCompleteDisplay } from '../components/modals';
+import { WinnerDisplay } from '../components/modals';
 import { Button } from '../components/common/Button';
 import { Badge } from '../components/common/Badge';
 import { COLORS, RADIUS, SPACING, GAME } from '../constants';
@@ -25,14 +25,6 @@ interface TableState {
   winners?: any[];
 }
 
-interface GameCompleteData {
-  winner: string;
-  winnerName?: string;
-  finalChips: number;
-  totalPlayers: number;
-  message: string;
-}
-
 export const GameView: React.FC = () => {
   const { tableId } = useParams<{ tableId: string }>();
   const navigate = useNavigate();
@@ -43,7 +35,8 @@ export const GameView: React.FC = () => {
   const [tableState, setTableState] = useState<TableState | null>(null);
   const [raiseAmount, setRaiseAmount] = useState(0);
   const [showWinners, setShowWinners] = useState(false);
-  const [gameComplete, setGameComplete] = useState<GameCompleteData | null>(null);
+  const [gameComplete, setGameComplete] = useState(false);
+  const [gameMode, setGameMode] = useState<string>('heads_up');
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
 
   // Find current user
@@ -96,12 +89,23 @@ export const GameView: React.FC = () => {
         winners: message.payload.winners,
       };
 
-      // Check if transitioning from handComplete to a new hand
+      // Detect game mode based on player count
+      const playerCount = newState.players.length;
+      if (playerCount === 2) {
+        setGameMode('heads_up');
+      } else if (playerCount === 3) {
+        setGameMode('3_player');
+      } else if (playerCount >= 6) {
+        setGameMode('6_player');
+      }
+
+      // Check if transitioning from handComplete to a new hand (hide modal)
       if (
         (tableState?.status === 'handComplete' && newState.status === 'waiting') ||
         (tableState?.status === 'handComplete' && newState.status === 'playing' && !newState.winners)
       ) {
         setShowWinners(false);
+        setGameComplete(false);
       }
 
       setTableState(newState);
@@ -109,6 +113,7 @@ export const GameView: React.FC = () => {
       // Show winners modal when hand is complete
       if (newState.status === 'handComplete' && newState.winners && newState.winners.length > 0) {
         setShowWinners(true);
+        setGameComplete(false);
       }
     };
 
@@ -117,15 +122,10 @@ export const GameView: React.FC = () => {
     };
 
     const handleGameComplete = (message: WSMessage) => {
-      setGameComplete({
-        winner: message.payload.winner,
-        winnerName: message.payload.winnerName,
-        finalChips: message.payload.finalChips,
-        totalPlayers: message.payload.totalPlayers,
-        message: message.payload.message,
-      });
-      setShowWinners(false);
+      // Show game complete in the same modal
       showSuccess('Game complete!');
+      setGameComplete(true);
+      setShowWinners(true);
     };
 
     const handleError = (message: WSMessage) => {
@@ -151,6 +151,15 @@ export const GameView: React.FC = () => {
       payload: { action, amount: amount || 0 },
     });
   }, [sendMessage]);
+
+  const handlePlayAgain = useCallback(() => {
+    // Navigate to lobby and automatically join queue with same game mode
+    navigate('/lobby', { state: { autoJoinQueue: true, gameMode } });
+  }, [navigate, gameMode]);
+
+  const handleReturnToLobby = useCallback(() => {
+    navigate('/lobby');
+  }, [navigate]);
 
   const handleLeaveGame = () => {
     navigate('/lobby');
@@ -325,19 +334,15 @@ export const GameView: React.FC = () => {
       {showWinners && tableState?.winners && tableState.winners.length > 0 && (
         <WinnerDisplay
           winners={tableState.winners}
-          onClose={() => setShowWinners(false)}
-        />
-      )}
-
-      {/* Game Complete Modal */}
-      {gameComplete && (
-        <GameCompleteDisplay
-          winner={gameComplete.winner}
-          winnerName={gameComplete.winnerName}
-          finalChips={gameComplete.finalChips}
-          totalPlayers={gameComplete.totalPlayers}
-          message={gameComplete.message}
-          currentUserId={currentUserId}
+          pot={tableState.pot}
+          gameComplete={gameComplete}
+          gameMode={gameMode}
+          onClose={() => {
+            setShowWinners(false);
+            setGameComplete(false);
+          }}
+          onPlayAgain={handlePlayAgain}
+          onReturnToLobby={handleReturnToLobby}
         />
       )}
 

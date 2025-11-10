@@ -13,7 +13,7 @@ services:
       MYSQL_USER: ${DB_USER:-poker_user}
       MYSQL_PASSWORD: ${DB_PASSWORD:-poker_password}
     ports:
-      - "3306:3306"
+      - "3310:3306"
     volumes:
       - db_data:/var/lib/mysql
       # Note: schema.sql is optional - GORM auto-migrations handle table creation

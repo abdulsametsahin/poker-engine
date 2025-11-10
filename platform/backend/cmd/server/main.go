@@ -1295,7 +1295,15 @@ func broadcastTableState(tableID string) {
 						"bet":         p.Bet,
 					}
 
+					// Show cards to owner or during showdown (hand complete and not folded)
 					if p.PlayerID == client.UserID && len(p.Cards) > 0 {
+						cards := make([]string, len(p.Cards))
+						for i, card := range p.Cards {
+							cards[i] = card.String()
+						}
+						playerData["cards"] = cards
+					} else if state.Status == pokerModels.StatusHandComplete && p.Status != pokerModels.StatusFolded && len(p.Cards) > 0 {
+						// Show all non-folded players' cards during showdown
 						cards := make([]string, len(p.Cards))
 						for i, card := range p.Cards {
 							cards[i] = card.String()

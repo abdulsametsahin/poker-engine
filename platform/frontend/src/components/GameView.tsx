@@ -11,7 +11,6 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useWebSocket } from '../hooks/useWebSocket';
 import PokerTable from './PokerTable';
 import WinnerDisplay from './WinnerDisplay';
-import GameCompleteDisplay from './GameCompleteDisplay';
 
 interface Player {
   user_id: string;
@@ -47,14 +46,6 @@ interface TableState {
   winners?: Winner[];
 }
 
-interface GameCompleteData {
-  winner: string;
-  winnerName?: string;
-  finalChips: number;
-  totalPlayers: number;
-  message: string;
-}
-
 export const GameView: React.FC = () => {
   const { tableId } = useParams<{ tableId: string }>();
   const navigate = useNavigate();
@@ -62,7 +53,6 @@ export const GameView: React.FC = () => {
   const [tableState, setTableState] = useState<TableState | null>(null);
   const [raiseAmount, setRaiseAmount] = useState('');
   const [showWinners, setShowWinners] = useState(false);
-  const [gameComplete, setGameComplete] = useState<GameCompleteData | null>(null);
 
   useEffect(() => {
     if (isConnected && tableId) {
@@ -112,23 +102,18 @@ export const GameView: React.FC = () => {
           break;
 
         case 'game_complete':
-          // Game is completely over - show game complete modal
+          // Game is completely over - navigate to lobby after showing success message
           console.log('Game complete detected!', lastMessage.payload);
-          setGameComplete({
-            winner: lastMessage.payload.winner,
-            winnerName: lastMessage.payload.winnerName,
-            finalChips: lastMessage.payload.finalChips,
-            totalPlayers: lastMessage.payload.totalPlayers,
-            message: lastMessage.payload.message,
-          });
-          setShowWinners(false); // Hide hand winner modal if showing
+          setTimeout(() => {
+            navigate('/lobby');
+          }, 3000);
           break;
 
         default:
           console.log('Unknown message type:', lastMessage.type);
       }
     }
-  }, [lastMessage, tableId, tableState?.status]);
+  }, [lastMessage, tableId, tableState?.status, navigate]);
 
   const handleAction = (action: string, amount?: number) => {
     send({
@@ -165,17 +150,8 @@ export const GameView: React.FC = () => {
       bgcolor: '#0f1419',
       backgroundImage: 'radial-gradient(circle at 20% 30%, rgba(16, 185, 129, 0.05) 0%, transparent 50%), radial-gradient(circle at 80% 70%, rgba(99, 102, 241, 0.05) 0%, transparent 50%)',
     }}>
-      {/* Game Complete Modal - Takes priority over winner modal */}
-      {gameComplete ? (
-        <GameCompleteDisplay
-          winner={gameComplete.winner}
-          winnerName={gameComplete.winnerName}
-          finalChips={gameComplete.finalChips}
-          totalPlayers={gameComplete.totalPlayers}
-          message={gameComplete.message}
-          currentUserId={currentUserId}
-        />
-      ) : showWinners && tableState?.winners ? (
+      {/* Winner Modal */}
+      {showWinners && tableState?.winners ? (
         <WinnerDisplay winners={tableState.winners} onClose={handleCloseWinners} />
       ) : null}
 

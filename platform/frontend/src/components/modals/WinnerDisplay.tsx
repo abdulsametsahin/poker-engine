@@ -1,302 +1,278 @@
-import React, { useEffect, useState, memo } from 'react';
-import { Box, Modal, Fade, Stack, Typography } from '@mui/material';
-import { EmojiEvents, Stars } from '@mui/icons-material';
+import React, { useEffect, useState } from 'react';
+import { Box, Stack, Typography, Fade, Modal, Chip } from '@mui/material';
+import { EmojiEvents, Home, Refresh } from '@mui/icons-material';
 import { PlayingCard } from '../game/PlayingCard';
-import { Avatar } from '../common/Avatar';
-import { Badge } from '../common/Badge';
-import { COLORS, RADIUS, SPACING } from '../../constants';
-import { formatUsername, formatChips } from '../../utils';
-
-interface CardObject {
-  rank: string;
-  suit: string;
-}
-
-interface Winner {
-  playerId: string;
-  amount: number;
-  handRank: string;
-  handCards: (string | CardObject)[];
-}
+import { Button } from '../common/Button';
+import { COLORS, RADIUS, TRANSITIONS, GAME } from '../../constants';
+import { WinnerInfo } from '../../types';
 
 interface WinnerDisplayProps {
-  winners: Winner[];
+  winners: WinnerInfo[];
+  pot?: number;
+  gameComplete?: boolean;
+  gameMode?: string;
   onClose: () => void;
+  onPlayAgain?: () => void;
+  onReturnToLobby?: () => void;
 }
 
-const Confetti: React.FC = () => {
-  const pieces = Array.from({ length: 50 }, (_, i) => ({
-    id: i,
-    left: Math.random() * 100,
-    delay: Math.random() * 2,
-    duration: 2 + Math.random() * 2,
-  }));
-
-  return (
-    <Box sx={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
-      {pieces.map((piece) => (
-        <Box
-          key={piece.id}
-          sx={{
-            position: 'absolute',
-            left: `${piece.left}%`,
-            top: -20,
-            width: 10,
-            height: 10,
-            background: `hsl(${Math.random() * 360}, 70%, 60%)`,
-            opacity: 0.8,
-            borderRadius: '50%',
-            '@keyframes fall': {
-              '0%': {
-                transform: 'translateY(0) rotate(0deg)',
-                opacity: 1,
-              },
-              '100%': {
-                transform: `translateY(100vh) rotate(${360 + Math.random() * 360}deg)`,
-                opacity: 0,
-              },
-            },
-            animation: `fall ${piece.duration}s ease-in ${piece.delay}s infinite`,
-          }}
-        />
-      ))}
-    </Box>
-  );
-};
-
-export const WinnerDisplay: React.FC<WinnerDisplayProps> = memo(({ winners, onClose }) => {
+const WinnerDisplay: React.FC<WinnerDisplayProps> = ({ 
+  winners, 
+  pot, 
+  gameComplete = false,
+  gameMode,
+  onClose,
+  onPlayAgain,
+  onReturnToLobby,
+}) => {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
     if (winners && winners.length > 0) {
       setOpen(true);
-      // Auto close after 5 seconds
-      const timer = setTimeout(() => {
-        handleClose();
-      }, 5000);
-      return () => clearTimeout(timer);
+      // Auto close only if not game complete
+      if (!gameComplete) {
+        const timer = setTimeout(() => {
+          handleClose();
+        }, GAME.WINNER_MODAL_DURATION);
+        return () => clearTimeout(timer);
+      }
     }
-  }, [winners]);
+  }, [winners, gameComplete]);
 
   const handleClose = () => {
     setOpen(false);
     setTimeout(onClose, 300);
   };
 
-  const cardToString = (card: string | CardObject): string => {
-    if (typeof card === 'string') return card;
+  const handlePlayAgain = () => {
+    if (onPlayAgain) {
+      onPlayAgain();
+    }
+    handleClose();
+  };
+
+  const handleReturnToLobby = () => {
+    if (onReturnToLobby) {
+      onReturnToLobby();
+    }
+    handleClose();
+  };
+
+  // Convert card object to string format
+  const cardToString = (card: any): string => {
+    if (typeof card === 'string') {
+      return card;
+    }
     return `${card.rank}${card.suit}`;
   };
 
   if (!winners || winners.length === 0) return null;
 
-  const mainWinner = winners[0];
-  const bigWin = mainWinner.amount >= 500;
+  const isMultipleWinners = winners.length > 1;
+  const totalWinnings = winners.reduce((sum, w) => sum + w.amount, 0);
 
   return (
     <Modal
       open={open}
-      onClose={handleClose}
+      onClose={gameComplete ? undefined : handleClose}
+      onClick={gameComplete ? undefined : handleClose}
       sx={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         backdropFilter: 'blur(4px)',
+        backgroundColor: 'rgba(0, 0, 0, 0.75)',
       }}
     >
-      <Fade in={open}>
+      <Fade in={open} timeout={300}>
         <Box
-          onClick={handleClose}
+          onClick={(e) => e.stopPropagation()}
           sx={{
-            position: 'relative',
-            width: '90%',
             maxWidth: 600,
-            maxHeight: '90vh',
-            overflow: 'auto',
+            width: '90%',
             borderRadius: RADIUS.lg,
-            background: `linear-gradient(135deg, rgba(0, 0, 0, 0.95) 0%, rgba(20, 20, 20, 0.95) 100%)`,
-            border: `3px solid ${COLORS.accent.main}`,
-            boxShadow: `0 0 40px ${COLORS.accent.glow}, 0 20px 60px rgba(0, 0, 0, 0.8)`,
-            p: 4,
-            cursor: 'pointer',
-            '&::before': {
-              content: '""',
-              position: 'absolute',
-              inset: 0,
-              borderRadius: RADIUS.lg,
-              background: `radial-gradient(circle at 50% 0%, ${COLORS.accent.main}20 0%, transparent 70%)`,
-              pointerEvents: 'none',
-            },
+            background: `linear-gradient(135deg, ${COLORS.background.paper} 0%, ${COLORS.background.tertiary} 100%)`,
+            border: `2px solid ${gameComplete ? COLORS.accent.main : COLORS.success.main}`,
+            boxShadow: `0 8px 32px rgba(0, 0, 0, 0.6)`,
+            position: 'relative',
+            overflow: 'hidden',
           }}
         >
-          {/* Confetti animation for big wins */}
-          {bigWin && <Confetti />}
+          {/* Subtle background */}
+          <Box
+            sx={{
+              position: 'absolute',
+              inset: 0,
+              background: gameComplete
+                ? `radial-gradient(circle at 50% 0%, ${COLORS.accent.main}10 0%, transparent 50%)`
+                : `radial-gradient(circle at 50% 0%, ${COLORS.success.main}10 0%, transparent 50%)`,
+              pointerEvents: 'none',
+            }}
+          />
 
-          <Stack spacing={3} alignItems="center" sx={{ position: 'relative', zIndex: 1 }}>
-            {/* Trophy icon with animation */}
-            <Box
-              sx={{
-                '@keyframes trophy-bounce': {
-                  '0%, 100%': {
-                    transform: 'translateY(0) scale(1)',
-                  },
-                  '50%': {
-                    transform: 'translateY(-20px) scale(1.1)',
-                  },
-                },
-                animation: 'trophy-bounce 1s ease-in-out 3',
-              }}
-            >
+          <Stack spacing={2} sx={{ p: 3, position: 'relative', zIndex: 1 }}>
+            {/* Header */}
+            <Stack direction="row" spacing={2} alignItems="center" justifyContent="center">
               <EmojiEvents
                 sx={{
-                  fontSize: 100,
-                  color: COLORS.accent.main,
-                  filter: `drop-shadow(0 0 20px ${COLORS.accent.glow})`,
+                  fontSize: 32,
+                  color: gameComplete ? COLORS.accent.main : COLORS.success.main,
                 }}
               />
-            </Box>
-
-            {/* Winner(s) Title */}
-            <Typography
-              variant="h2"
-              sx={{
-                color: COLORS.accent.main,
-                fontWeight: 900,
-                fontSize: { xs: '32px', sm: '40px' },
-                textAlign: 'center',
-                textShadow: `0 0 20px ${COLORS.accent.glow}`,
-                '@keyframes glow-text': {
-                  '0%, 100%': {
-                    textShadow: `0 0 20px ${COLORS.accent.glow}`,
-                  },
-                  '50%': {
-                    textShadow: `0 0 30px ${COLORS.accent.glow}, 0 0 40px ${COLORS.accent.glow}`,
-                  },
-                },
-                animation: 'glow-text 2s ease-in-out infinite',
-              }}
-            >
-              {winners.length === 1 ? '🎉 WINNER! 🎉' : '🎉 WINNERS! 🎉'}
-            </Typography>
-
-            {/* Winner cards */}
-            {winners.map((winner, idx) => (
-              <Box
-                key={idx}
+              <Typography
+                variant="h5"
                 sx={{
-                  width: '100%',
-                  p: 3,
-                  borderRadius: RADIUS.md,
-                  background: idx === 0
-                    ? `linear-gradient(135deg, ${COLORS.accent.main}15 0%, ${COLORS.warning.main}15 100%)`
-                    : 'rgba(255, 255, 255, 0.05)',
-                  border: idx === 0
-                    ? `2px solid ${COLORS.accent.main}`
-                    : `1px solid ${COLORS.border.main}`,
-                  backdropFilter: 'blur(10px)',
+                  fontWeight: 800,
+                  color: gameComplete ? COLORS.accent.main : COLORS.success.main,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
                 }}
               >
-                <Stack spacing={2}>
-                  {/* Player info */}
-                  <Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={2}>
-                    <Stack direction="row" spacing={2} alignItems="center">
-                      <Avatar
-                        username={winner.playerId}
-                        size="large"
+                {gameComplete ? '🎮 Game Complete!' : isMultipleWinners ? 'Split Pot!' : 'Winner!'}
+              </Typography>
+            </Stack>
+
+            {/* Pot amount */}
+            {pot !== undefined && (
+              <Typography
+                variant="body1"
+                sx={{
+                  textAlign: 'center',
+                  color: COLORS.text.secondary,
+                  fontFamily: 'monospace',
+                  fontSize: 16,
+                }}
+              >
+                Pot: <span style={{ color: COLORS.success.main, fontWeight: 700 }}>${totalWinnings}</span>
+              </Typography>
+            )}
+
+            {/* Winners */}
+            <Stack spacing={1.5}>
+              {winners.map((winner, idx) => (
+                <Box
+                  key={idx}
+                  sx={{
+                    borderRadius: RADIUS.md,
+                    background: `${COLORS.background.secondary}90`,
+                    border: `1px solid ${COLORS.border.main}`,
+                    p: 2,
+                    transition: TRANSITIONS.normal,
+                  }}
+                >
+                  <Stack spacing={1.5}>
+                    {/* Player info */}
+                    <Stack direction="row" justifyContent="space-between" alignItems="center">
+                      <Typography
+                        variant="body1"
+                        sx={{
+                          fontWeight: 600,
+                          color: COLORS.text.primary,
+                          fontSize: 16,
+                        }}
+                      >
+                        {winner.username || winner.playerId.slice(0, 12)}
+                      </Typography>
+                      
+                      <Chip
+                        label={`+$${winner.amount}`}
+                        sx={{
+                          background: COLORS.success.main,
+                          color: COLORS.text.primary,
+                          fontWeight: 700,
+                          fontSize: 14,
+                          height: 28,
+                        }}
                       />
-                      <Box>
-                        <Typography
-                          variant="h5"
-                          sx={{
-                            color: COLORS.text.primary,
-                            fontWeight: 700,
-                          }}
-                        >
-                          {formatUsername(winner.playerId.slice(0, 12))}
-                        </Typography>
-                        {idx === 0 && (
-                          <Badge variant="warning" size="small">
-                            1ST PLACE
-                          </Badge>
-                        )}
-                      </Box>
                     </Stack>
 
-                    <Box
+                    {/* Hand rank */}
+                    <Typography
+                      variant="body2"
                       sx={{
-                        px: 3,
-                        py: 1.5,
-                        borderRadius: RADIUS.sm,
-                        background: `linear-gradient(135deg, ${COLORS.success.main} 0%, ${COLORS.success.dark} 100%)`,
-                        boxShadow: `0 4px 12px ${COLORS.success.glow}`,
+                        textAlign: 'center',
+                        color: COLORS.accent.main,
+                        fontWeight: 600,
+                        textTransform: 'uppercase',
+                        fontSize: 13,
+                        letterSpacing: '0.05em',
                       }}
                     >
-                      <Typography
-                        variant="h4"
-                        sx={{
-                          color: COLORS.text.primary,
-                          fontWeight: 900,
-                          fontFamily: 'monospace',
-                        }}
+                      {winner.handRank}
+                    </Typography>
+
+                    {/* Winning cards */}
+                    {winner.handCards && winner.handCards.length > 0 && (
+                      <Stack
+                        direction="row"
+                        spacing={0.75}
+                        justifyContent="center"
+                        flexWrap="wrap"
                       >
-                        +{formatChips(winner.amount)}
-                      </Typography>
-                    </Box>
+                        {winner.handCards.map((card, cardIdx) => (
+                          <PlayingCard
+                            key={cardIdx}
+                            card={cardToString(card)}
+                            size="small"
+                            highlight={!gameComplete}
+                          />
+                        ))}
+                      </Stack>
+                    )}
                   </Stack>
+                </Box>
+              ))}
+            </Stack>
 
-                  {/* Hand rank */}
-                  <Box sx={{ textAlign: 'center' }}>
-                    <Stack direction="row" spacing={1} alignItems="center" justifyContent="center">
-                      <Stars sx={{ color: COLORS.accent.main, fontSize: 20 }} />
-                      <Typography
-                        variant="h5"
-                        sx={{
-                          color: COLORS.accent.main,
-                          fontWeight: 700,
-                          textTransform: 'uppercase',
-                        }}
-                      >
-                        {winner.handRank}
-                      </Typography>
-                      <Stars sx={{ color: COLORS.accent.main, fontSize: 20 }} />
-                    </Stack>
-                  </Box>
-
-                  {/* Winning cards */}
-                  {winner.handCards && winner.handCards.length > 0 && (
-                    <Stack direction="row" spacing={1} justifyContent="center" flexWrap="wrap">
-                      {winner.handCards.map((card, cardIdx) => (
-                        <PlayingCard
-                          key={cardIdx}
-                          card={cardToString(card)}
-                          size="medium"
-                          highlight={true}
-                        />
-                      ))}
-                    </Stack>
-                  )}
-                </Stack>
-              </Box>
-            ))}
-
-            {/* Close hint */}
-            <Typography
-              variant="caption"
-              sx={{
-                color: COLORS.text.secondary,
-                fontSize: '12px',
-                mt: 2,
-              }}
-            >
-              Click anywhere to continue
-            </Typography>
+            {/* Game complete actions or auto-close hint */}
+            {gameComplete ? (
+              <Stack direction="row" spacing={1.5} sx={{ mt: 1 }}>
+                <Button
+                  variant="primary"
+                  onClick={handlePlayAgain}
+                  sx={{
+                    flex: 1,
+                    py: 1.25,
+                    fontSize: 14,
+                    fontWeight: 700,
+                  }}
+                  startIcon={<Refresh />}
+                >
+                  Play Again
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={handleReturnToLobby}
+                  sx={{
+                    flex: 1,
+                    py: 1.25,
+                    fontSize: 14,
+                    fontWeight: 700,
+                  }}
+                  startIcon={<Home />}
+                >
+                  Lobby
+                </Button>
+              </Stack>
+            ) : (
+              <Typography
+                variant="caption"
+                sx={{
+                  textAlign: 'center',
+                  color: COLORS.text.secondary,
+                  fontSize: 11,
+                  mt: 0.5,
+                }}
+              >
+                Click anywhere to continue
+              </Typography>
+            )}
           </Stack>
         </Box>
       </Fade>
     </Modal>
   );
-});
-
-WinnerDisplay.displayName = 'WinnerDisplay';
+};
 
 export default WinnerDisplay;

@@ -200,7 +200,7 @@ export const GAME = {
   // Timing
   ACTION_TIMER_DURATION: 30000,        // 30 seconds
   WINNER_MODAL_DURATION: 5000,         // 5 seconds
-  TOAST_DURATION: 4000,                // 4 seconds
+  TOAST_DURATION: 2000,                // 2 seconds
   POLLING_INTERVAL: 5000,              // 5 seconds (should be removed)
   RECONNECT_DELAY: 1000,               // 1 second
   RECONNECT_MAX_DELAY: 30000,          // 30 seconds

@@ -2,9 +2,10 @@ import React, { memo } from 'react';
 import { Box, Stack, Typography } from '@mui/material';
 import { PlayerSeat } from './PlayerSeat';
 import { PlayingCard } from './PlayingCard';
+import { ShowdownDisplay } from './ShowdownDisplay';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { COLORS, RADIUS, SPACING, TRANSITIONS } from '../../constants';
-import { Player } from '../../types';
+import { Player, WinnerInfo } from '../../types';
 import { getBettingRoundName } from '../../utils';
 
 interface TableState {
@@ -17,6 +18,7 @@ interface TableState {
   betting_round?: string;
   current_bet?: number;
   action_deadline?: string;
+  winners?: WinnerInfo[];
 }
 
 interface PokerTableProps {
@@ -52,6 +54,7 @@ export const PokerTable: React.FC<PokerTableProps> = memo(({
     betting_round,
     current_bet = 0,
     action_deadline,
+    winners = [],
   } = tableState;
 
   // Calculate positions for circular layout
@@ -301,6 +304,13 @@ export const PokerTable: React.FC<PokerTableProps> = memo(({
           </Typography>
         </Box>
       )}
+
+      {/* Showdown Display - shows all player hands at bottom */}
+      <ShowdownDisplay
+        players={players}
+        winners={winners}
+        show={status === 'handComplete' && winners.length > 0}
+      />
     </Box>
   );
 });

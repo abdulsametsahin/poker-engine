@@ -46,12 +46,11 @@ export interface TableState {
 }
 
 export interface WinnerInfo {
-  user_id: string;
+  playerId: string;
   username?: string;
-  seat_number: number;
   amount: number;
-  hand_rank: string;
-  winning_cards: Card[];
+  handRank: string;
+  handCards: Card[];
 }
 
 export interface GameComplete {
