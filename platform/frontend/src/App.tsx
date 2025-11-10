@@ -12,6 +12,7 @@ const Login = lazy(() => import('./pages/Login').then(module => ({ default: modu
 const Lobby = lazy(() => import('./pages/Lobby').then(module => ({ default: module.Lobby })));
 const GameView = lazy(() => import('./pages/GameView').then(module => ({ default: module.GameView })));
 const Settings = lazy(() => import('./pages/Settings').then(module => ({ default: module.Settings })));
+const Tournaments = lazy(() => import('./pages/Tournaments').then(module => ({ default: module.Tournaments })));
 
 const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }) => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -49,6 +50,14 @@ const AppRoutes: React.FC = () => {
           element={
             <ProtectedRoute>
               <Settings />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/tournaments"
+          element={
+            <ProtectedRoute>
+              <Tournaments />
             </ProtectedRoute>
           }
         />

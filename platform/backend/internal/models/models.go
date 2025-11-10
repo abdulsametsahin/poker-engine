@@ -24,19 +24,21 @@ func (User) TableName() string {
 
 // Table represents a poker table (cash game or tournament)
 type Table struct {
-	ID          string         `gorm:"column:id;type:varchar(36);primaryKey" json:"id"`
-	Name        string         `gorm:"column:name;type:varchar(100);not null" json:"name"`
-	GameType    string         `gorm:"column:game_type;type:enum('cash', 'tournament');not null" json:"game_type"`
-	Status      string         `gorm:"column:status;type:enum('waiting', 'playing', 'completed');default:waiting" json:"status"`
-	SmallBlind  int            `gorm:"column:small_blind;not null" json:"small_blind"`
-	BigBlind    int            `gorm:"column:big_blind;not null" json:"big_blind"`
-	MaxPlayers  int            `gorm:"column:max_players;not null" json:"max_players"`
-	MinBuyIn    *int           `gorm:"column:min_buy_in" json:"min_buy_in,omitempty"`
-	MaxBuyIn    *int           `gorm:"column:max_buy_in" json:"max_buy_in,omitempty"`
-	CreatedAt   time.Time      `gorm:"column:created_at;autoCreateTime" json:"created_at"`
-	StartedAt   *time.Time     `gorm:"column:started_at" json:"started_at,omitempty"`
-	CompletedAt *time.Time     `gorm:"column:completed_at" json:"completed_at,omitempty"`
-	DeletedAt   gorm.DeletedAt `gorm:"column:deleted_at;index" json:"-"`
+	ID           string         `gorm:"column:id;type:varchar(36);primaryKey" json:"id"`
+	TournamentID *string        `gorm:"column:tournament_id;type:varchar(36);index:idx_tournament_id" json:"tournament_id,omitempty"`
+	TableNumber  *int           `gorm:"column:table_number" json:"table_number,omitempty"`
+	Name         string         `gorm:"column:name;type:varchar(100);not null" json:"name"`
+	GameType     string         `gorm:"column:game_type;type:enum('cash', 'tournament');not null" json:"game_type"`
+	Status       string         `gorm:"column:status;type:enum('waiting', 'playing', 'completed');default:waiting" json:"status"`
+	SmallBlind   int            `gorm:"column:small_blind;not null" json:"small_blind"`
+	BigBlind     int            `gorm:"column:big_blind;not null" json:"big_blind"`
+	MaxPlayers   int            `gorm:"column:max_players;not null" json:"max_players"`
+	MinBuyIn     *int           `gorm:"column:min_buy_in" json:"min_buy_in,omitempty"`
+	MaxBuyIn     *int           `gorm:"column:max_buy_in" json:"max_buy_in,omitempty"`
+	CreatedAt    time.Time      `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	StartedAt    *time.Time     `gorm:"column:started_at" json:"started_at,omitempty"`
+	CompletedAt  *time.Time     `gorm:"column:completed_at" json:"completed_at,omitempty"`
+	DeletedAt    gorm.DeletedAt `gorm:"column:deleted_at;index" json:"-"`
 }
 
 // TableName specifies the table name for Table model
@@ -64,19 +66,29 @@ func (TableSeat) TableName() string {
 
 // Tournament represents a poker tournament
 type Tournament struct {
-	ID             string         `gorm:"column:id;type:varchar(36);primaryKey" json:"id"`
-	Name           string         `gorm:"column:name;type:varchar(100);not null" json:"name"`
-	Status         string         `gorm:"column:status;type:enum('registering', 'starting', 'in_progress', 'completed');default:registering" json:"status"`
-	BuyIn          int            `gorm:"column:buy_in;not null" json:"buy_in"`
-	StartingChips  int            `gorm:"column:starting_chips;not null" json:"starting_chips"`
-	MaxPlayers     int            `gorm:"column:max_players;not null" json:"max_players"`
-	CurrentPlayers int            `gorm:"column:current_players;default:0" json:"current_players"`
-	PrizePool      int            `gorm:"column:prize_pool;default:0" json:"prize_pool"`
-	Structure      string         `gorm:"column:structure;type:json" json:"structure"`
-	CreatedAt      time.Time      `gorm:"column:created_at;autoCreateTime" json:"created_at"`
-	StartedAt      *time.Time     `gorm:"column:started_at" json:"started_at,omitempty"`
-	CompletedAt    *time.Time     `gorm:"column:completed_at" json:"completed_at,omitempty"`
-	DeletedAt      gorm.DeletedAt `gorm:"column:deleted_at;index" json:"-"`
+	ID                    string         `gorm:"column:id;type:varchar(36);primaryKey" json:"id"`
+	TournamentCode        string         `gorm:"column:tournament_code;type:varchar(8);uniqueIndex;not null" json:"tournament_code"`
+	Name                  string         `gorm:"column:name;type:varchar(100);not null" json:"name"`
+	CreatorID             *string        `gorm:"column:creator_id;type:varchar(36);index:idx_creator" json:"creator_id,omitempty"`
+	Status                string         `gorm:"column:status;type:enum('registering', 'starting', 'in_progress', 'completed', 'cancelled');default:registering" json:"status"`
+	BuyIn                 int            `gorm:"column:buy_in;not null" json:"buy_in"`
+	StartingChips         int            `gorm:"column:starting_chips;not null" json:"starting_chips"`
+	MaxPlayers            int            `gorm:"column:max_players;not null" json:"max_players"`
+	MinPlayers            int            `gorm:"column:min_players;not null;default:2" json:"min_players"`
+	CurrentPlayers        int            `gorm:"column:current_players;default:0" json:"current_players"`
+	PrizePool             int            `gorm:"column:prize_pool;default:0" json:"prize_pool"`
+	Structure             string         `gorm:"column:structure;type:json" json:"structure"`
+	PrizeStructure        string         `gorm:"column:prize_structure;type:json" json:"prize_structure"`
+	StartTime             *time.Time     `gorm:"column:start_time" json:"start_time,omitempty"`
+	RegistrationClosesAt  *time.Time     `gorm:"column:registration_closes_at" json:"registration_closes_at,omitempty"`
+	AutoStartDelay        int            `gorm:"column:auto_start_delay;default:300" json:"auto_start_delay"` // seconds
+	CurrentLevel          int            `gorm:"column:current_level;default:1" json:"current_level"`
+	LevelStartedAt        *time.Time     `gorm:"column:level_started_at" json:"level_started_at,omitempty"`
+	CreatedAt             time.Time      `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	StartedAt             *time.Time     `gorm:"column:started_at" json:"started_at,omitempty"`
+	CompletedAt           *time.Time     `gorm:"column:completed_at" json:"completed_at,omitempty"`
+	PrizesDistributed     bool           `gorm:"column:prizes_distributed;default:false" json:"prizes_distributed"`
+	DeletedAt             gorm.DeletedAt `gorm:"column:deleted_at;index" json:"-"`
 }
 
 // TableName specifies the table name for Tournament model
@@ -193,4 +205,48 @@ type AuthResponse struct {
 type GameAction struct {
 	Action string `json:"action"`
 	Amount int    `json:"amount,omitempty"`
+}
+
+// BlindLevel represents a blind level in a tournament structure
+type BlindLevel struct {
+	Level      int `json:"level"`
+	SmallBlind int `json:"small_blind"`
+	BigBlind   int `json:"big_blind"`
+	Ante       int `json:"ante"`
+	Duration   int `json:"duration"` // Duration in seconds
+}
+
+// PrizePosition represents prize distribution for a position
+type PrizePosition struct {
+	Position   int     `json:"position"`    // 1 = 1st place, 2 = 2nd place, etc.
+	Percentage float64 `json:"percentage"`  // Percentage of total prize pool
+}
+
+// TournamentStructure represents the complete blind schedule
+type TournamentStructure struct {
+	Name         string       `json:"name"`
+	Description  string       `json:"description,omitempty"`
+	BlindLevels  []BlindLevel `json:"blind_levels"`
+}
+
+// PrizeStructureConfig represents the prize distribution configuration
+type PrizeStructureConfig struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Positions   []PrizePosition `json:"positions"`
+}
+
+// CreateTournamentRequest represents the request to create a tournament
+type CreateTournamentRequest struct {
+	Name                string  `json:"name" binding:"required"`
+	BuyIn               int     `json:"buy_in" binding:"required,min=0"`
+	StartingChips       int     `json:"starting_chips" binding:"required,min=100"`
+	MaxPlayers          int     `json:"max_players" binding:"required,min=2,max=1000"`
+	MinPlayers          int     `json:"min_players" binding:"required,min=2"`
+	StructurePreset     string  `json:"structure_preset,omitempty"`
+	CustomStructure     *TournamentStructure `json:"custom_structure,omitempty"`
+	PrizeStructurePreset string `json:"prize_structure_preset,omitempty"`
+	CustomPrizeStructure *PrizeStructureConfig `json:"custom_prize_structure,omitempty"`
+	StartTime           *time.Time `json:"start_time,omitempty"`
+	AutoStartDelay      int     `json:"auto_start_delay" binding:"min=0"`
 }
