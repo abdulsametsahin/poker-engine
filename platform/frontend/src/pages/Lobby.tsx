@@ -13,6 +13,7 @@ import { Badge } from '../components/common/Badge';
 import { Chip } from '../components/common/Chip';
 import { EmptyState } from '../components/common/EmptyState';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
+import { MatchFoundModal } from '../components/modals/MatchFoundModal';
 import { COLORS, ROUTES } from '../constants';
 import { formatTimestamp } from '../utils';
 
@@ -167,6 +168,7 @@ export const Lobby: React.FC = () => {
     queueSize: number;
     required: number;
   } | null>(null);
+  const [matchFound, setMatchFound] = useState<{ tableId: string; gameMode: string } | null>(null);
 
   const loadActiveTables = async () => {
     try {
@@ -197,14 +199,23 @@ export const Lobby: React.FC = () => {
   useEffect(() => {
     const handler = (message: any) => {
       const { table_id } = message.payload;
+      const gameMode = matchmaking?.gameMode || 'heads_up';
+
       setMatchmaking(null);
-      showSuccess('Match found! Joining table...');
-      navigate(`/game/${table_id}`);
+      setMatchFound({ tableId: table_id, gameMode });
+      showSuccess('Match found!');
     };
 
     addMessageHandler('match_found', handler);
     return () => removeMessageHandler('match_found');
-  }, [addMessageHandler, removeMessageHandler, navigate, showSuccess]);
+  }, [addMessageHandler, removeMessageHandler, matchmaking, showSuccess]);
+
+  // Handle countdown complete - navigate to game
+  const handleCountdownComplete = () => {
+    if (matchFound) {
+      navigate(`/game/${matchFound.tableId}`);
+    }
+  };
 
   const handleJoinTable = async (tableId: string, minBuyIn: number) => {
     try {
@@ -597,6 +608,13 @@ export const Lobby: React.FC = () => {
           </Stack>
         </DialogContent>
       </Dialog>
+
+      {/* Match Found Modal with Countdown */}
+      <MatchFoundModal
+        open={!!matchFound}
+        gameMode={matchFound?.gameMode || 'heads_up'}
+        onCountdownComplete={handleCountdownComplete}
+      />
     </AppLayout>
   );
 };
