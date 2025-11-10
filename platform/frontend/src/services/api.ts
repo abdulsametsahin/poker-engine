@@ -20,6 +20,7 @@ export const authAPI = {
     api.post('/auth/register', data),
   login: (data: { username: string; password: string }) =>
     api.post('/auth/login', data),
+  getCurrentUser: () => api.get('/user'),
 };
 
 export const tableAPI = {

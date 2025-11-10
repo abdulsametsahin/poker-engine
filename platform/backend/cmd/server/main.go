@@ -148,6 +148,7 @@ func main() {
 	authorized := r.Group("/")
 	authorized.Use(authMiddleware())
 	{
+		authorized.GET("/api/user", handleGetCurrentUser)
 		authorized.GET("/api/tables", handleGetTables)
 		authorized.GET("/api/tables/active", handleGetActiveTables)
 		authorized.GET("/api/tables/past", handleGetPastTables)
@@ -197,6 +198,19 @@ func handleRegister(c *gin.Context) {
 	user.PasswordHash = ""
 
 	c.JSON(http.StatusCreated, models.AuthResponse{Token: token, User: user})
+}
+
+func handleGetCurrentUser(c *gin.Context) {
+	userID := c.GetString("user_id")
+
+	var user models.User
+	if err := database.Where("id = ?", userID).First(&user).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+
+	user.PasswordHash = ""
+	c.JSON(http.StatusOK, user)
 }
 
 func handleLogin(c *gin.Context) {
