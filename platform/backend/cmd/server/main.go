@@ -185,7 +185,7 @@ func handleRegister(c *gin.Context) {
 		Username:     req.Username,
 		Email:        req.Email,
 		PasswordHash: hash,
-		Chips:        1000,
+		Chips:        10000,
 	}
 
 	if err := database.Create(&user).Error; err != nil {
@@ -926,6 +926,10 @@ func handleEngineEvent(tableID string, event pokerModels.Event) {
 	case "handComplete":
 		// Update hand data with final results
 		updateHandRecord(tableID, event)
+
+		// Sync player chips to database after hand completion
+		syncPlayerChipsToDatabase(tableID)
+
 		broadcastTableState(tableID)
 
 		go func() {
@@ -958,6 +962,9 @@ func handleEngineEvent(tableID string, event pokerModels.Event) {
 	case "gameComplete":
 		// Game is over - only one player left
 		log.Printf("Game complete on table %s", tableID)
+
+		// Sync final chips and return to user accounts
+		syncFinalChipsOnGameComplete(tableID)
 
 		// Mark table as completed in database
 		now := time.Now()
@@ -1207,6 +1214,69 @@ func sumSidePots(sidePots []pokerModels.SidePot) int {
 		total += sp.Amount
 	}
 	return total
+}
+
+func syncPlayerChipsToDatabase(tableID string) {
+	bridge.mu.RLock()
+	table, exists := bridge.tables[tableID]
+	bridge.mu.RUnlock()
+
+	if !exists {
+		log.Printf("Table %s not found for syncing chips", tableID)
+		return
+	}
+
+	state := table.GetState()
+
+	// Update table_seats with current chips
+	for _, player := range state.Players {
+		if player != nil {
+			err := database.Model(&models.TableSeat{}).
+				Where("table_id = ? AND user_id = ? AND left_at IS NULL", tableID, player.PlayerID).
+				Update("chips", player.Chips).Error
+
+			if err != nil {
+				log.Printf("Failed to update chips for player %s: %v", player.PlayerID, err)
+			} else {
+				log.Printf("Updated chips for player %s: %d", player.PlayerID, player.Chips)
+			}
+		}
+	}
+}
+
+func syncFinalChipsOnGameComplete(tableID string) {
+	bridge.mu.RLock()
+	table, exists := bridge.tables[tableID]
+	bridge.mu.RUnlock()
+
+	if !exists {
+		log.Printf("Table %s not found for game complete sync", tableID)
+		return
+	}
+
+	state := table.GetState()
+
+	// Return remaining chips to user accounts
+	for _, player := range state.Players {
+		if player != nil && player.Chips > 0 {
+			// Add chips back to user account
+			err := database.Model(&models.User{}).
+				Where("id = ?", player.PlayerID).
+				UpdateColumn("chips", database.Raw("chips + ?", player.Chips)).Error
+
+			if err != nil {
+				log.Printf("Failed to return chips to user %s: %v", player.PlayerID, err)
+			} else {
+				log.Printf("Returned %d chips to user %s", player.Chips, player.PlayerID)
+			}
+
+			// Mark seat as left
+			now := time.Now()
+			database.Model(&models.TableSeat{}).
+				Where("table_id = ? AND user_id = ? AND left_at IS NULL", tableID, player.PlayerID).
+				Update("left_at", &now)
+		}
+	}
 }
 
 func processGameAction(userID, tableID, action string, amount int) {

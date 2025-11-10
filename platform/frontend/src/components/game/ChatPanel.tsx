@@ -40,39 +40,9 @@ export const ChatPanel: React.FC<ChatPanelProps> = memo(({ messages, currentUser
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
-        borderRadius: RADIUS.md,
-        background: `linear-gradient(135deg, ${COLORS.background.paper}f5 0%, ${COLORS.background.tertiary}f5 100%)`,
-        backdropFilter: 'blur(10px)',
-        border: `1px solid ${COLORS.border.main}`,
         overflow: 'hidden',
       }}
     >
-      {/* Header */}
-      <Box
-        sx={{
-          px: 2,
-          py: 1.5,
-          borderBottom: `1px solid ${COLORS.border.main}`,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1,
-        }}
-      >
-        <Chat sx={{ fontSize: 18, color: COLORS.primary.main }} />
-        <Typography
-          variant="body2"
-          sx={{
-            color: COLORS.text.primary,
-            fontWeight: 700,
-            fontSize: 13,
-            letterSpacing: '0.05em',
-            textTransform: 'uppercase',
-          }}
-        >
-          Chat
-        </Typography>
-      </Box>
-
       {/* Messages list */}
       <Stack
         spacing={1}
@@ -132,9 +102,9 @@ export const ChatPanel: React.FC<ChatPanelProps> = memo(({ messages, currentUser
                     py: 1,
                     borderRadius: RADIUS.sm,
                     background: isCurrentUser
-                      ? `linear-gradient(135deg, ${COLORS.primary.main} 0%, ${COLORS.secondary.main} 100%)`
+                      ? COLORS.info.main
                       : `${COLORS.background.secondary}cc`,
-                    border: `1px solid ${isCurrentUser ? COLORS.primary.main : COLORS.border.main}`,
+                    border: `1px solid ${isCurrentUser ? COLORS.info.main : COLORS.border.main}`,
                   }}
                 >
                   {!isCurrentUser && (
@@ -202,7 +172,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = memo(({ messages, currentUser
                   onClick={handleSend}
                   disabled={!inputMessage.trim()}
                   sx={{
-                    color: COLORS.primary.main,
+                    color: COLORS.info.main,
                     '&:disabled': {
                       color: COLORS.text.disabled,
                     },
@@ -221,10 +191,10 @@ export const ChatPanel: React.FC<ChatPanelProps> = memo(({ messages, currentUser
                 borderColor: COLORS.border.main,
               },
               '&:hover fieldset': {
-                borderColor: COLORS.primary.main,
+                borderColor: COLORS.info.main,
               },
               '&.Mui-focused fieldset': {
-                borderColor: COLORS.primary.main,
+                borderColor: COLORS.info.main,
               },
             },
           }}

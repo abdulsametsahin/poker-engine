@@ -80,13 +80,22 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children, showHeader = tru
                   sx={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 1,
+                    gap: 2,
                     mr: 1,
+                    px: 2,
+                    py: 0.75,
+                    borderRadius: '8px',
+                    background: COLORS.background.secondary,
                   }}
                 >
-                  <Typography variant="body2" color="text.secondary">
-                    {user.username}
-                  </Typography>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                    <Typography variant="body2" fontWeight={600}>
+                      {user.username}
+                    </Typography>
+                    <Typography variant="caption" color={COLORS.accent.main} fontWeight={600}>
+                      ${user.chips?.toLocaleString() || 0}
+                    </Typography>
+                  </Box>
                 </Box>
 
                 <IconButton
@@ -122,7 +131,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children, showHeader = tru
                     },
                   }}
                 >
-                  <MenuItem onClick={handleMenuClose}>
+                  <MenuItem onClick={() => { handleMenuClose(); navigate(ROUTES.SETTINGS); }}>
                     <SettingsIcon sx={{ mr: 1.5, fontSize: '1.25rem' }} />
                     Settings
                   </MenuItem>

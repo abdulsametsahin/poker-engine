@@ -92,6 +92,30 @@ export const GameView: React.FC = () => {
         winners: message.payload.winners,
       };
 
+      // Track player actions and add to history
+      if (tableState && tableState.players) {
+        newState.players.forEach((newPlayer: Player) => {
+          const oldPlayer = tableState.players.find((p: Player) => p.user_id === newPlayer.user_id);
+
+          // Check if player took a new action (last_action changed)
+          if (oldPlayer && newPlayer.last_action && newPlayer.last_action !== oldPlayer.last_action) {
+            const actionName = newPlayer.last_action.toLowerCase();
+            const playerName = newPlayer.username || 'Player';
+            const amount = newPlayer.current_bet && newPlayer.current_bet > (oldPlayer.current_bet || 0)
+              ? newPlayer.current_bet - (oldPlayer.current_bet || 0)
+              : undefined;
+
+            setHistory(prev => [...prev, {
+              id: `${newPlayer.user_id}-${Date.now()}`,
+              playerName,
+              action: actionName,
+              amount,
+              timestamp: new Date(),
+            }]);
+          }
+        });
+      }
+
       // Detect game mode based on player count
       const playerCount = newState.players.length;
       if (playerCount === 2) {
@@ -109,6 +133,8 @@ export const GameView: React.FC = () => {
       ) {
         setShowHandComplete(false);
         setShowGameComplete(false);
+        // Clear history when new hand starts
+        setHistory([]);
       }
 
       setTableState(newState);
