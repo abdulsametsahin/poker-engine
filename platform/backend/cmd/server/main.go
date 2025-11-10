@@ -6,12 +6,14 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
 	"poker-platform/backend/internal/auth"
 	"poker-platform/backend/internal/db"
 	"poker-platform/backend/internal/models"
+	"poker-platform/backend/internal/tournament"
 
 	"poker-engine/engine"
 	pokerModels "poker-engine/models"
@@ -24,9 +26,10 @@ import (
 )
 
 var (
-	database    *db.DB
-	authService *auth.Service
-	upgrader    = websocket.Upgrader{
+	database         *db.DB
+	authService      *auth.Service
+	tournamentService *tournament.Service
+	upgrader         = websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool { return true },
 	}
 )
@@ -119,6 +122,7 @@ func main() {
 	defer sqlDB.Close()
 
 	authService = auth.NewService(getEnv("JWT_SECRET", "secret"))
+	tournamentService = tournament.NewService(database.DB)
 
 	// Set Gin mode based on environment
 	if getEnv("ENV", "development") == "production" {
@@ -157,7 +161,19 @@ func main() {
 		authorized.POST("/api/matchmaking/join", handleJoinMatchmaking)
 		authorized.GET("/api/matchmaking/status", handleMatchmakingStatus)
 		authorized.POST("/api/matchmaking/leave", handleLeaveMatchmaking)
+
+		// Tournament endpoints
+		authorized.POST("/api/tournaments", handleCreateTournament)
+		authorized.GET("/api/tournaments", handleListTournaments)
+		authorized.GET("/api/tournaments/:id", handleGetTournament)
+		authorized.POST("/api/tournaments/:id/register", handleRegisterTournament)
+		authorized.POST("/api/tournaments/:id/unregister", handleUnregisterTournament)
+		authorized.DELETE("/api/tournaments/:id", handleCancelTournament)
+		authorized.GET("/api/tournaments/:id/players", handleGetTournamentPlayers)
 	}
+
+	// Public tournament endpoint (for shareable links)
+	r.GET("/api/tournaments/code/:code", handleGetTournamentByCode)
 
 	// WebSocket endpoint (handles auth internally)
 	r.GET("/ws", handleWebSocket)
@@ -1476,6 +1492,175 @@ func sendToClient(c *Client, msg WSMessage) {
 	select {
 	case c.Send <- data:
 	default:
+	}
+}
+
+// Tournament handlers
+
+func handleCreateTournament(c *gin.Context) {
+	userID := c.GetString("user_id")
+
+	var req models.CreateTournamentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request", "details": err.Error()})
+		return
+	}
+
+	tournament, err := tournamentService.CreateTournament(req, userID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, tournament)
+}
+
+func handleListTournaments(c *gin.Context) {
+	status := c.Query("status")
+	limitStr := c.DefaultQuery("limit", "20")
+	offsetStr := c.DefaultQuery("offset", "0")
+
+	limit, _ := strconv.Atoi(limitStr)
+	offset, _ := strconv.Atoi(offsetStr)
+
+	tournaments, err := tournamentService.ListTournaments(status, limit, offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch tournaments"})
+		return
+	}
+
+	c.JSON(http.StatusOK, tournaments)
+}
+
+func handleGetTournament(c *gin.Context) {
+	tournamentID := c.Param("id")
+
+	tournament, err := tournamentService.GetTournament(tournamentID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Tournament not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, tournament)
+}
+
+func handleGetTournamentByCode(c *gin.Context) {
+	code := c.Param("code")
+
+	tournament, err := tournamentService.GetTournamentByCode(code)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Tournament not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, tournament)
+}
+
+func handleRegisterTournament(c *gin.Context) {
+	userID := c.GetString("user_id")
+	tournamentID := c.Param("id")
+
+	if err := tournamentService.RegisterPlayer(tournamentID, userID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Broadcast tournament update to lobby
+	go broadcastTournamentUpdate(tournamentID)
+
+	c.JSON(http.StatusOK, gin.H{"message": "Successfully registered"})
+}
+
+func handleUnregisterTournament(c *gin.Context) {
+	userID := c.GetString("user_id")
+	tournamentID := c.Param("id")
+
+	if err := tournamentService.UnregisterPlayer(tournamentID, userID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Broadcast tournament update to lobby
+	go broadcastTournamentUpdate(tournamentID)
+
+	c.JSON(http.StatusOK, gin.H{"message": "Successfully unregistered"})
+}
+
+func handleCancelTournament(c *gin.Context) {
+	userID := c.GetString("user_id")
+	tournamentID := c.Param("id")
+
+	if err := tournamentService.CancelTournament(tournamentID, userID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Broadcast tournament cancelled
+	go broadcastTournamentUpdate(tournamentID)
+
+	c.JSON(http.StatusOK, gin.H{"message": "Tournament cancelled"})
+}
+
+func handleGetTournamentPlayers(c *gin.Context) {
+	tournamentID := c.Param("id")
+
+	players, err := tournamentService.GetTournamentPlayers(tournamentID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch players"})
+		return
+	}
+
+	// Enrich player data with usernames
+	type PlayerResponse struct {
+		models.TournamentPlayer
+		Username string `json:"username"`
+	}
+
+	var response []PlayerResponse
+	for _, player := range players {
+		var user models.User
+		if err := database.Where("id = ?", player.UserID).First(&user).Error; err == nil {
+			response = append(response, PlayerResponse{
+				TournamentPlayer: player,
+				Username:         user.Username,
+			})
+		}
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+func broadcastTournamentUpdate(tournamentID string) {
+	// Get updated tournament info
+	tournament, err := tournamentService.GetTournament(tournamentID)
+	if err != nil {
+		return
+	}
+
+	players, _ := tournamentService.GetTournamentPlayers(tournamentID)
+
+	message := WSMessage{
+		Type: "tournament_update",
+		Payload: map[string]interface{}{
+			"tournament": tournament,
+			"players":    players,
+		},
+	}
+
+	data, _ := json.Marshal(message)
+
+	// Broadcast to all clients subscribed to this tournament
+	bridge.mu.RLock()
+	defer bridge.mu.RUnlock()
+
+	for _, client := range bridge.clients {
+		// TODO: Add tournament subscription tracking
+		// For now, send to all connected clients
+		select {
+		case client.Send <- data:
+		default:
+			// Client buffer is full, skip
+		}
 	}
 }
 

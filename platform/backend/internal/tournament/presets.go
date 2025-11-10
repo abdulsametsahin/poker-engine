@@ -1,6 +1,6 @@
 package tournament
 
-import "poker-platform/internal/models"
+import "poker-platform/backend/internal/models"
 
 // Predefined Tournament Structures
 var (
