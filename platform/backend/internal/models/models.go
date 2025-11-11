@@ -29,7 +29,7 @@ type Table struct {
 	TableNumber  *int           `gorm:"column:table_number" json:"table_number,omitempty"`
 	Name         string         `gorm:"column:name;type:varchar(100);not null" json:"name"`
 	GameType     string         `gorm:"column:game_type;type:enum('cash', 'tournament');not null" json:"game_type"`
-	Status       string         `gorm:"column:status;type:enum('waiting', 'playing', 'completed');default:waiting" json:"status"`
+	Status       string         `gorm:"column:status;type:enum('waiting', 'playing', 'paused', 'completed');default:waiting" json:"status"`
 	SmallBlind   int            `gorm:"column:small_blind;not null" json:"small_blind"`
 	BigBlind     int            `gorm:"column:big_blind;not null" json:"big_blind"`
 	MaxPlayers   int            `gorm:"column:max_players;not null" json:"max_players"`
@@ -70,7 +70,7 @@ type Tournament struct {
 	TournamentCode        string         `gorm:"column:tournament_code;type:varchar(8);uniqueIndex;not null" json:"tournament_code"`
 	Name                  string         `gorm:"column:name;type:varchar(100);not null" json:"name"`
 	CreatorID             *string        `gorm:"column:creator_id;type:varchar(36);index:idx_creator" json:"creator_id,omitempty"`
-	Status                string         `gorm:"column:status;type:enum('registering', 'starting', 'in_progress', 'completed', 'cancelled');default:registering" json:"status"`
+	Status                string         `gorm:"column:status;type:enum('registering', 'starting', 'in_progress', 'paused', 'completed', 'cancelled');default:registering" json:"status"`
 	BuyIn                 int            `gorm:"column:buy_in;not null" json:"buy_in"`
 	StartingChips         int            `gorm:"column:starting_chips;not null" json:"starting_chips"`
 	MaxPlayers            int            `gorm:"column:max_players;not null" json:"max_players"`
@@ -85,6 +85,9 @@ type Tournament struct {
 	AutoStartDelay        int            `gorm:"column:auto_start_delay;default:300" json:"auto_start_delay"` // seconds
 	CurrentLevel          int            `gorm:"column:current_level;default:1" json:"current_level"`
 	LevelStartedAt        *time.Time     `gorm:"column:level_started_at" json:"level_started_at,omitempty"`
+	PausedAt              *time.Time     `gorm:"column:paused_at" json:"paused_at,omitempty"`
+	ResumedAt             *time.Time     `gorm:"column:resumed_at" json:"resumed_at,omitempty"`
+	TotalPausedDuration   int            `gorm:"column:total_paused_duration;default:0" json:"total_paused_duration"` // seconds
 	CreatedAt             time.Time      `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 	StartedAt             *time.Time     `gorm:"column:started_at" json:"started_at,omitempty"`
 	CompletedAt           *time.Time     `gorm:"column:completed_at" json:"completed_at,omitempty"`

@@ -46,6 +46,8 @@ export const tournamentAPI = {
   getTournamentByCode: (code: string) => api.get(`/tournaments/code/${code}`),
   cancelTournament: (id: string) => api.delete(`/tournaments/${id}`),
   startTournament: (id: string) => api.post(`/tournaments/${id}/start`),
+  pauseTournament: (id: string) => api.post(`/tournaments/${id}/pause`),
+  resumeTournament: (id: string) => api.post(`/tournaments/${id}/resume`),
 
   // Player registration
   registerForTournament: (id: string) => api.post(`/tournaments/${id}/register`),

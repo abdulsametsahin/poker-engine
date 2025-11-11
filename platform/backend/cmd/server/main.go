@@ -224,6 +224,8 @@ func main() {
 		authorized.DELETE("/api/tournaments/:id", handleCancelTournament)
 		authorized.GET("/api/tournaments/:id/players", handleGetTournamentPlayers)
 		authorized.POST("/api/tournaments/:id/start", handleStartTournament)
+		authorized.POST("/api/tournaments/:id/pause", handlePauseTournament)
+		authorized.POST("/api/tournaments/:id/resume", handleResumeTournament)
 		authorized.GET("/api/tournaments/:id/prizes", handleGetTournamentPrizes)
 		authorized.GET("/api/tournaments/:id/standings", handleGetTournamentStandings)
 	}
@@ -1777,6 +1779,44 @@ func handleStartTournament(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Tournament started"})
 }
 
+func handlePauseTournament(c *gin.Context) {
+	tournamentID := c.Param("id")
+	userID := c.GetString("user_id")
+
+	// Pause tournament in database
+	if err := tournamentService.PauseTournament(tournamentID, userID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Pause all tables in game engine
+	go pauseTournamentTables(tournamentID)
+
+	// Broadcast tournament paused
+	go broadcastTournamentPaused(tournamentID)
+
+	c.JSON(http.StatusOK, gin.H{"message": "Tournament paused"})
+}
+
+func handleResumeTournament(c *gin.Context) {
+	tournamentID := c.Param("id")
+	userID := c.GetString("user_id")
+
+	// Resume tournament in database
+	if err := tournamentService.ResumeTournament(tournamentID, userID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Resume all tables in game engine
+	go resumeTournamentTables(tournamentID)
+
+	// Broadcast tournament resumed
+	go broadcastTournamentResumed(tournamentID)
+
+	c.JSON(http.StatusOK, gin.H{"message": "Tournament resumed"})
+}
+
 func handleGetTournamentPrizes(c *gin.Context) {
 	tournamentID := c.Param("id")
 
@@ -2503,6 +2543,103 @@ func broadcastTournamentUpdate(tournamentID string) {
 		case client.Send <- data:
 		default:
 			// Client buffer is full, skip
+		}
+	}
+}
+
+func pauseTournamentTables(tournamentID string) {
+	var tables []models.Table
+	if err := database.DB.Where("tournament_id = ?", tournamentID).Find(&tables).Error; err != nil {
+		log.Printf("Error getting tournament tables: %v", err)
+		return
+	}
+
+	bridge.mu.Lock()
+	defer bridge.mu.Unlock()
+
+	for _, table := range tables {
+		if engineTable, exists := bridge.tables[table.ID]; exists {
+			if err := engineTable.Pause(); err != nil {
+				log.Printf("Error pausing table %s: %v", table.ID, err)
+			} else {
+				log.Printf("Paused table %s for tournament %s", table.ID, tournamentID)
+			}
+		}
+	}
+}
+
+func resumeTournamentTables(tournamentID string) {
+	var tables []models.Table
+	if err := database.DB.Where("tournament_id = ?", tournamentID).Find(&tables).Error; err != nil {
+		log.Printf("Error getting tournament tables: %v", err)
+		return
+	}
+
+	bridge.mu.Lock()
+	defer bridge.mu.Unlock()
+
+	for _, table := range tables {
+		if engineTable, exists := bridge.tables[table.ID]; exists {
+			if err := engineTable.Resume(); err != nil {
+				log.Printf("Error resuming table %s: %v", table.ID, err)
+			} else {
+				log.Printf("Resumed table %s for tournament %s", table.ID, tournamentID)
+			}
+		}
+	}
+}
+
+func broadcastTournamentPaused(tournamentID string) {
+	tournament, err := tournamentService.GetTournament(tournamentID)
+	if err != nil {
+		return
+	}
+
+	message := WSMessage{
+		Type: "tournament_paused",
+		Payload: map[string]interface{}{
+			"tournament_id": tournamentID,
+			"paused_at":     tournament.PausedAt,
+		},
+	}
+
+	data, _ := json.Marshal(message)
+
+	bridge.mu.RLock()
+	defer bridge.mu.RUnlock()
+
+	for _, client := range bridge.clients {
+		select {
+		case client.Send <- data:
+		default:
+		}
+	}
+}
+
+func broadcastTournamentResumed(tournamentID string) {
+	tournament, err := tournamentService.GetTournament(tournamentID)
+	if err != nil {
+		return
+	}
+
+	message := WSMessage{
+		Type: "tournament_resumed",
+		Payload: map[string]interface{}{
+			"tournament_id":     tournamentID,
+			"resumed_at":        tournament.ResumedAt,
+			"total_paused_time": tournament.TotalPausedDuration,
+		},
+	}
+
+	data, _ := json.Marshal(message)
+
+	bridge.mu.RLock()
+	defer bridge.mu.RUnlock()
+
+	for _, client := range bridge.clients {
+		select {
+		case client.Send <- data:
+		default:
 		}
 	}
 }
