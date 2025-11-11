@@ -158,10 +158,6 @@ export const GameView: React.FC = () => {
               ? newPlayer.last_action_amount
               : undefined;
 
-            // Log to console
-            const amountStr = amount ? ` $${amount}` : '';
-            addConsoleLog('ACTION', `${playerName} ${actionName}${amountStr}`, 'info');
-
             // Check if this exact action was already added in the last 500ms to prevent duplicates
             setHistory(prev => {
               const now = Date.now();
@@ -175,6 +171,10 @@ export const GameView: React.FC = () => {
               if (recentDuplicate) {
                 return prev; // Skip duplicate
               }
+
+              // Log to console only if not a duplicate
+              const amountStr = amount ? ` $${amount}` : '';
+              addConsoleLog('ACTION', `${playerName} ${actionName}${amountStr}`, 'info');
 
               return [...prev, {
                 id: `${newPlayer.user_id}-${Date.now()}`,
@@ -211,17 +211,30 @@ export const GameView: React.FC = () => {
       // Log game state changes
       if (tableState?.status !== newState.status) {
         addConsoleLog('GAME_STATE', `Status changed: ${tableState?.status || 'none'} → ${newState.status}`, 'info');
+
+        // Log hand start
+        if (newState.status === 'playing' && tableState?.status !== 'playing') {
+          addConsoleLog('HAND_START', 'New hand started', 'success');
+        }
       }
 
       if (tableState?.betting_round !== newState.betting_round && newState.betting_round) {
-        addConsoleLog('GAME_STATE', `Betting round: ${newState.betting_round}`, 'info');
+        const communityCards = newState.community_cards || [];
+        const cardsStr = communityCards.length > 0 ? ` - Cards: ${communityCards.join(' ')}` : '';
+        addConsoleLog('GAME_STATE', `Betting round: ${newState.betting_round}${cardsStr}`, 'info');
       }
 
       setTableState(newState);
 
       // Show hand complete display when hand is complete (not game complete)
       if (newState.status === 'handComplete' && newState.winners && newState.winners.length > 0) {
-        addConsoleLog('GAME_STATE', `Hand complete! Winners: ${newState.winners.map((w: any) => w.playerName).join(', ')}`, 'success');
+        const winnersStr = newState.winners.map((w: any) =>
+          `${w.playerName} (${w.handRank}) - ${w.amount} chips`
+        ).join(', ');
+        const communityCards = newState.community_cards || [];
+        const cardsStr = communityCards.length > 0 ? ` - Board: ${communityCards.join(' ')}` : '';
+        addConsoleLog('HAND_COMPLETE', `Winners: ${winnersStr}${cardsStr}`, 'success');
+        addConsoleLog('HAND_COMPLETE', `Pot: ${newState.pot} chips`, 'info');
         setShowHandComplete(true);
       }
     };

@@ -291,6 +291,18 @@ func (g *Game) advanceToNextRound() {
 		return
 	}
 
+	// Fire roundAdvanced event
+	if g.onEvent != nil {
+		g.onEvent(models.Event{
+			Event:   "roundAdvanced",
+			TableID: g.table.TableID,
+			Data: map[string]interface{}{
+				"bettingRound":    string(g.table.CurrentHand.BettingRound),
+				"communityCards":  g.table.CurrentHand.CommunityCards,
+			},
+		})
+	}
+
 	positionFinder := NewPositionFinder(g.table.Players)
 	g.table.CurrentHand.CurrentPosition = positionFinder.findNextActive(g.table.CurrentHand.DealerPosition)
 	g.startActionTimer()
