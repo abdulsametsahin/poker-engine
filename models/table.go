@@ -61,10 +61,11 @@ type CurrentHand struct {
 }
 
 type Winner struct {
-	PlayerID  string `json:"playerId"`
-	Amount    int    `json:"amount"`
-	HandRank  string `json:"handRank"`
-	HandCards []Card `json:"handCards"`
+	PlayerID   string `json:"playerId"`
+	PlayerName string `json:"playerName"`
+	Amount     int    `json:"amount"`
+	HandRank   string `json:"handRank"`
+	HandCards  []Card `json:"handCards"`
 }
 
 type Table struct {
