@@ -33,7 +33,7 @@ Thumbs.db
 # Platform specific
 platform/backend/.env
 platform/frontend/node_modules/
-platform/frontend/build/
+# platform/frontend/build/ - Now committed to git for Docker
 platform/frontend/.env.local
 platform/frontend/.env.development.local
 platform/frontend/.env.test.local
