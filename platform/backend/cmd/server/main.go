@@ -997,10 +997,11 @@ func updateHandRecord(tableID string, event pokerModels.Event) {
 }
 
 func handleEngineEvent(tableID string, event pokerModels.Event) {
-	log.Printf("Engine event on table %s: %s", tableID, event.Event)
+	log.Printf("[ENGINE_EVENT] Table %s: %s", tableID, event.Event)
 
 	switch event.Event {
 	case "handStart":
+		log.Printf("[ENGINE_EVENT] Hand started on table %s", tableID)
 		// Create hand record at the start of the hand
 		createHandRecord(tableID, event)
 		broadcastTableState(tableID)
@@ -1021,23 +1022,48 @@ func handleEngineEvent(tableID string, event pokerModels.Event) {
 			table, exists := bridge.tables[tableID]
 			bridge.mu.RUnlock()
 
-			if exists {
-				state := table.GetState()
-				activeCount := 0
-				for _, p := range state.Players {
-					if p != nil && p.Status != pokerModels.StatusSittingOut && p.Chips > 0 {
-						activeCount++
-					}
-				}
+			if !exists {
+				log.Printf("[CASH_GAME] Table %s no longer exists, cannot start next hand", tableID)
+				return
+			}
 
-				if activeCount >= 2 {
-					err := table.StartGame()
-					if err != nil {
-						log.Printf("Failed to start next hand: %v", err)
+			state := table.GetState()
+			log.Printf("[CASH_GAME] Checking players for next hand on table %s", tableID)
+
+			activeCount := 0
+			totalPlayers := 0
+			for i, p := range state.Players {
+				if p != nil {
+					totalPlayers++
+					log.Printf("[CASH_GAME] Player %d: %s (ID: %s) - Chips: %d, Status: %s",
+						i, p.PlayerName, p.PlayerID, p.Chips, p.Status)
+
+					if p.Status != pokerModels.StatusSittingOut && p.Chips > 0 {
+						activeCount++
 					} else {
-						broadcastTableState(tableID)
+						log.Printf("[CASH_GAME] Player %s not active: Status=%s, Chips=%d",
+							p.PlayerName, p.Status, p.Chips)
 					}
 				}
+			}
+
+			log.Printf("[CASH_GAME] Table %s: Total players: %d, Active players: %d",
+				tableID, totalPlayers, activeCount)
+
+			if activeCount >= 2 {
+				log.Printf("[CASH_GAME] Starting next hand on table %s with %d active players",
+					tableID, activeCount)
+				err := table.StartGame()
+				if err != nil {
+					log.Printf("[CASH_GAME] ERROR: Failed to start next hand on table %s: %v",
+						tableID, err)
+				} else {
+					log.Printf("[CASH_GAME] Successfully started next hand on table %s", tableID)
+					broadcastTableState(tableID)
+				}
+			} else {
+				log.Printf("[CASH_GAME] Cannot start next hand on table %s: Only %d active players (need 2+)",
+					tableID, activeCount)
 			}
 		}()
 
@@ -1094,14 +1120,18 @@ func handleEngineEvent(tableID string, event pokerModels.Event) {
 			}
 		}()
 
-	case "playerAction", "roundAdvanced":
-		// Broadcast on significant events only
+	case "playerAction":
+		log.Printf("[ENGINE_EVENT] Player action completed on table %s", tableID)
+		broadcastTableState(tableID)
+
+	case "roundAdvanced":
+		log.Printf("[ENGINE_EVENT] Betting round advanced on table %s", tableID)
 		broadcastTableState(tableID)
 
 	case "cardDealt":
 		// Don't broadcast on every card dealt to reduce message frequency
 		// The next playerAction or roundAdvanced will trigger a broadcast
-		log.Printf("Card dealt on table %s (skipping broadcast)", tableID)
+		log.Printf("[ENGINE_EVENT] Card dealt on table %s (skipping broadcast)", tableID)
 	}
 }
 
@@ -1363,14 +1393,14 @@ func syncFinalChipsOnGameComplete(tableID string) {
 }
 
 func processGameAction(userID, tableID, action string, amount int) {
-	log.Printf("Game action: user=%s table=%s action=%s amount=%d", userID, tableID, action, amount)
+	log.Printf("[ACTION] Processing: user=%s table=%s action=%s amount=%d", userID, tableID, action, amount)
 
 	bridge.mu.RLock()
 	table, exists := bridge.tables[tableID]
 	bridge.mu.RUnlock()
 
 	if !exists {
-		log.Printf("Table %s not found", tableID)
+		log.Printf("[ACTION] ERROR: Table %s not found", tableID)
 		return
 	}
 
@@ -1379,6 +1409,8 @@ func processGameAction(userID, tableID, action string, amount int) {
 	var bettingRound string
 	if state.CurrentHand != nil {
 		bettingRound = string(state.CurrentHand.BettingRound)
+		log.Printf("[ACTION] Current state: betting_round=%s current_bet=%d pot=%d",
+			bettingRound, state.CurrentBet, state.Pot)
 	}
 
 	var playerAction pokerModels.PlayerAction
@@ -1400,8 +1432,10 @@ func processGameAction(userID, tableID, action string, amount int) {
 
 	err := table.ProcessAction(userID, playerAction, amount)
 	if err != nil {
-		log.Printf("Action error: %v", err)
+		log.Printf("[ACTION] ERROR: Failed to process action for user=%s table=%s: %v", userID, tableID, err)
 	} else {
+		log.Printf("[ACTION] SUCCESS: Action %s processed for user=%s table=%s", action, userID, tableID)
+
 		// Save action to database if we have a current hand ID
 		bridge.mu.RLock()
 		handID, hasHandID := bridge.currentHandIDs[tableID]
@@ -1417,15 +1451,16 @@ func processGameAction(userID, tableID, action string, amount int) {
 			}
 
 			if err := database.Create(&handAction).Error; err != nil {
-				log.Printf("Failed to save hand action: %v", err)
+				log.Printf("[ACTION] ERROR: Failed to save hand action to DB: %v", err)
 			} else {
-				log.Printf("Saved action %s by %s for hand %d", action, userID, handID)
+				log.Printf("[ACTION] Saved action %s by %s for hand %d", action, userID, handID)
 			}
 		} else {
-			log.Printf("No hand ID found for table %s to save action", tableID)
+			log.Printf("[ACTION] WARNING: No hand ID found for table %s to save action", tableID)
 		}
 
-		broadcastTableState(tableID)
+		// Note: broadcastTableState is handled by the engine event handler (line 1099)
+		// to avoid duplicate broadcasts for each action
 	}
 }
 
@@ -1813,17 +1848,17 @@ func initializeTournamentTables(tournamentID string) {
 }
 
 func handleTournamentEngineEvent(tableID string, event pokerModels.Event) {
-	log.Printf("Tournament table %s event: %s", tableID, event.Event)
+	log.Printf("[ENGINE_EVENT] Tournament table %s: %s", tableID, event.Event)
 
 	switch event.Event {
 	case "handStart":
-		log.Printf("Hand started on tournament table %s", tableID)
+		log.Printf("[ENGINE_EVENT] Hand started on tournament table %s", tableID)
 		// Create hand record at the start of the hand
 		createHandRecord(tableID, event)
 		broadcastTableState(tableID)
 
 	case "handComplete":
-		log.Printf("Hand completed on tournament table %s", tableID)
+		log.Printf("[ENGINE_EVENT] Hand completed on tournament table %s", tableID)
 
 		// Update hand data with final results
 		updateHandRecord(tableID, event)
@@ -1845,44 +1880,72 @@ func handleTournamentEngineEvent(tableID string, event pokerModels.Event) {
 			table, exists := bridge.tables[tableID]
 			bridge.mu.RUnlock()
 
-			if exists {
-				state := table.GetState()
-				activeCount := 0
-				for _, p := range state.Players {
-					if p != nil && p.Status != pokerModels.StatusSittingOut && p.Chips > 0 {
-						activeCount++
-					}
-				}
+			if !exists {
+				log.Printf("[TOURNAMENT] Table %s no longer exists, cannot start next hand", tableID)
+				return
+			}
 
-				if activeCount >= 2 {
-					log.Printf("Starting next hand on tournament table %s with %d active players", tableID, activeCount)
-					err := table.StartGame()
-					if err != nil {
-						log.Printf("Failed to start next hand on tournament table %s: %v", tableID, err)
+			state := table.GetState()
+			log.Printf("[TOURNAMENT] Checking players for next hand on table %s", tableID)
+
+			activeCount := 0
+			totalPlayers := 0
+			for i, p := range state.Players {
+				if p != nil {
+					totalPlayers++
+					log.Printf("[TOURNAMENT] Player %d: %s (ID: %s) - Chips: %d, Status: %s",
+						i, p.PlayerName, p.PlayerID, p.Chips, p.Status)
+
+					if p.Status != pokerModels.StatusSittingOut && p.Chips > 0 {
+						activeCount++
 					} else {
-						broadcastTableState(tableID)
+						log.Printf("[TOURNAMENT] Player %s not active: Status=%s, Chips=%d",
+							p.PlayerName, p.Status, p.Chips)
 					}
-				} else {
-					log.Printf("Not enough active players (%d) to start next hand on tournament table %s", activeCount, tableID)
 				}
+			}
+
+			log.Printf("[TOURNAMENT] Table %s: Total players: %d, Active players: %d",
+				tableID, totalPlayers, activeCount)
+
+			if activeCount >= 2 {
+				log.Printf("[TOURNAMENT] Starting next hand on table %s with %d active players",
+					tableID, activeCount)
+				err := table.StartGame()
+				if err != nil {
+					log.Printf("[TOURNAMENT] ERROR: Failed to start next hand on table %s: %v",
+						tableID, err)
+				} else {
+					log.Printf("[TOURNAMENT] Successfully started next hand on table %s", tableID)
+					broadcastTableState(tableID)
+				}
+			} else {
+				log.Printf("[TOURNAMENT] Cannot start next hand on table %s: Only %d active players (need 2+)",
+					tableID, activeCount)
 			}
 		}()
 		return // Return early since we already broadcasted
 
 	case "gameComplete":
+		log.Printf("[ENGINE_EVENT] Game complete on tournament table %s", tableID)
 		handleTournamentTableComplete(tableID, event)
 
-	case "playerAction", "roundAdvanced":
-		// Broadcast on significant events only
+	case "playerAction":
+		log.Printf("[ENGINE_EVENT] Player action completed on tournament table %s", tableID)
+		broadcastTableState(tableID)
+
+	case "roundAdvanced":
+		log.Printf("[ENGINE_EVENT] Betting round advanced on tournament table %s", tableID)
 		broadcastTableState(tableID)
 
 	case "cardDealt":
 		// Don't broadcast on every card dealt to reduce message frequency
 		// The next playerAction or roundAdvanced will trigger a broadcast
-		log.Printf("Card dealt on tournament table %s (skipping broadcast)", tableID)
+		log.Printf("[ENGINE_EVENT] Card dealt on tournament table %s (skipping broadcast)", tableID)
 		return // Return early to skip the default broadcast
 	}
 
+	log.Printf("[ENGINE_EVENT] Unexpected event on tournament table %s: %s - broadcasting", tableID, event.Event)
 	broadcastTableState(tableID)
 }
 
