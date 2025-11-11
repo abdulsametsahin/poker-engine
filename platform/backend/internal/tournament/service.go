@@ -462,3 +462,115 @@ func (s *Service) validateCreateRequest(req models.CreateTournamentRequest) erro
 
 	return nil
 }
+
+// PauseTournament pauses a tournament and all its tables
+func (s *Service) PauseTournament(tournamentID string, pausedBy string) error {
+	tx := s.db.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	// Get tournament
+	var tournament models.Tournament
+	if err := tx.Where("id = ?", tournamentID).First(&tournament).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	// Validate status
+	if tournament.Status != "in_progress" {
+		tx.Rollback()
+		return fmt.Errorf("can only pause in-progress tournament, current: %s", tournament.Status)
+	}
+
+	// Validate only creator can pause
+	if tournament.CreatorID == nil || *tournament.CreatorID != pausedBy {
+		tx.Rollback()
+		return fmt.Errorf("only tournament creator can pause")
+	}
+
+	// Update tournament status
+	now := time.Now()
+	if err := tx.Model(&tournament).Updates(map[string]interface{}{
+		"status":    "paused",
+		"paused_at": now,
+	}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	// Update all tournament tables in DB
+	if err := tx.Model(&models.Table{}).
+		Where("tournament_id = ? AND status = ?", tournamentID, "playing").
+		Update("status", "paused").Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	tx.Commit()
+	return nil
+}
+
+// ResumeTournament resumes a paused tournament
+func (s *Service) ResumeTournament(tournamentID string, resumedBy string) error {
+	tx := s.db.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	var tournament models.Tournament
+	if err := tx.Where("id = ?", tournamentID).First(&tournament).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	if tournament.Status != "paused" {
+		tx.Rollback()
+		return fmt.Errorf("tournament not paused, current: %s", tournament.Status)
+	}
+
+	if tournament.CreatorID == nil || *tournament.CreatorID != resumedBy {
+		tx.Rollback()
+		return fmt.Errorf("only tournament creator can resume")
+	}
+
+	// Calculate pause duration
+	pauseDuration := 0
+	if tournament.PausedAt != nil {
+		pauseDuration = int(time.Since(*tournament.PausedAt).Seconds())
+	}
+
+	// Update tournament
+	now := time.Now()
+	updates := map[string]interface{}{
+		"status":                 "in_progress",
+		"resumed_at":            now,
+		"total_paused_duration": tournament.TotalPausedDuration + pauseDuration,
+	}
+
+	// Adjust level_started_at to account for pause
+	if tournament.LevelStartedAt != nil {
+		adjustedLevelStart := tournament.LevelStartedAt.Add(time.Duration(pauseDuration) * time.Second)
+		updates["level_started_at"] = adjustedLevelStart
+	}
+
+	if err := tx.Model(&tournament).Updates(updates).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	// Resume all tournament tables
+	if err := tx.Model(&models.Table{}).
+		Where("tournament_id = ? AND status = ?", tournamentID, "paused").
+		Update("status", "playing").Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	tx.Commit()
+	return nil
+}

@@ -15,11 +15,14 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  Alert,
+  AlertTitle,
 } from '@mui/material';
 import {
   ArrowBack,
   ContentCopy,
   PlayArrow,
+  Pause,
   ExitToApp,
   EmojiEvents,
   AccessTime,
@@ -43,7 +46,7 @@ interface Tournament {
   tournament_code: string;
   name: string;
   creator_id?: string;
-  status: 'registering' | 'starting' | 'in_progress' | 'completed' | 'cancelled';
+  status: 'registering' | 'starting' | 'in_progress' | 'paused' | 'completed' | 'cancelled';
   buy_in: number;
   starting_chips: number;
   max_players: number;
@@ -305,6 +308,34 @@ export const TournamentDetail: React.FC = () => {
     }
   };
 
+  const handlePauseTournament = async () => {
+    if (!id) return;
+
+    if (!window.confirm('Are you sure you want to pause this tournament? All games will be paused.')) {
+      return;
+    }
+
+    try {
+      await tournamentAPI.pauseTournament(id);
+      showSuccess('Tournament paused');
+      fetchTournamentData();
+    } catch (error: any) {
+      showError(error.response?.data?.error || 'Failed to pause tournament');
+    }
+  };
+
+  const handleResumeTournament = async () => {
+    if (!id) return;
+
+    try {
+      await tournamentAPI.resumeTournament(id);
+      showSuccess('Tournament resumed');
+      fetchTournamentData();
+    } catch (error: any) {
+      showError(error.response?.data?.error || 'Failed to resume tournament');
+    }
+  };
+
   const handleCopyCode = () => {
     if (tournament) {
       navigator.clipboard.writeText(tournament.tournament_code);
@@ -327,6 +358,8 @@ export const TournamentDetail: React.FC = () => {
         return 'warning';
       case 'in_progress':
         return 'info';
+      case 'paused':
+        return 'warning';
       case 'completed':
         return 'default';
       case 'cancelled':
@@ -344,6 +377,8 @@ export const TournamentDetail: React.FC = () => {
         return 'Starting Soon...';
       case 'in_progress':
         return 'In Progress';
+      case 'paused':
+        return 'Paused';
       case 'completed':
         return 'Completed';
       case 'cancelled':
@@ -378,6 +413,8 @@ export const TournamentDetail: React.FC = () => {
   const nextLevel = structure.blind_levels[tournament.current_level];
   const isCreator = user?.id === tournament.creator_id;
   const canStart = isCreator && tournament.status === 'registering' && tournament.current_players >= tournament.min_players;
+  const canPause = isCreator && tournament.status === 'in_progress';
+  const canResume = isCreator && tournament.status === 'paused';
 
   return (
     <AppLayout>
@@ -439,8 +476,35 @@ export const TournamentDetail: React.FC = () => {
                   Start Tournament Now
                 </Button>
               )}
+              {canPause && (
+                <Button
+                  variant="warning"
+                  startIcon={<Pause />}
+                  onClick={handlePauseTournament}
+                >
+                  Pause Tournament
+                </Button>
+              )}
+              {canResume && (
+                <Button
+                  variant="success"
+                  startIcon={<PlayArrow />}
+                  onClick={handleResumeTournament}
+                >
+                  Resume Tournament
+                </Button>
+              )}
             </Stack>
           </Box>
+
+          {/* Paused Banner */}
+          {tournament.status === 'paused' && (
+            <Alert severity="warning">
+              <AlertTitle>Tournament Paused</AlertTitle>
+              This tournament is currently paused. All games are on hold.
+              {isCreator && ' Click "Resume Tournament" to continue.'}
+            </Alert>
+          )}
 
           {/* Tournament Info Cards */}
           <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "repeat(4, 1fr)" }} gap={3}>

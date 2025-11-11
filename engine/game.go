@@ -8,12 +8,15 @@ import (
 )
 
 type Game struct {
-	table         *models.Table
-	potCalculator *PotCalculator
-	actionTimer   *time.Timer
-	onTimeout     func(string)
-	onEvent       func(models.Event)
-	mu            sync.Mutex
+	table           *models.Table
+	potCalculator   *PotCalculator
+	actionTimer     *time.Timer
+	onTimeout       func(string)
+	onEvent         func(models.Event)
+	mu              sync.Mutex
+	pausedAt        *time.Time
+	pauseDuration   time.Duration
+	timerRemaining  time.Duration
 }
 
 func NewGame(table *models.Table, onTimeout func(string), onEvent func(models.Event)) *Game {
@@ -185,6 +188,10 @@ func (g *Game) dealPlayerCards() error {
 func (g *Game) ProcessAction(playerID string, action models.PlayerAction, amount int) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+
+	if g.table.Status == models.StatusPaused {
+		return fmt.Errorf("game is paused, actions not allowed")
+	}
 
 	if g.table.Status != models.StatusPlaying {
 		return fmt.Errorf("hand is not in progress")
@@ -546,6 +553,108 @@ func (g *Game) HandleTimeout(playerID string) error {
 		g.advanceToNextRound()
 	} else {
 		g.moveToNextPlayer()
+	}
+
+	return nil
+}
+
+// Pause pauses the active game and stops the action timer
+func (g *Game) Pause() error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if g.table.Status != models.StatusPlaying {
+		return fmt.Errorf("can only pause playing game, current status: %s", g.table.Status)
+	}
+
+	// Calculate remaining time on action timer
+	if g.table.CurrentHand != nil && g.table.CurrentHand.ActionDeadline != nil {
+		g.timerRemaining = time.Until(*g.table.CurrentHand.ActionDeadline)
+		if g.timerRemaining < 0 {
+			g.timerRemaining = 0
+		}
+	}
+
+	// Stop action timer
+	g.stopActionTimer()
+
+	// Mark as paused
+	now := time.Now()
+	g.pausedAt = &now
+	g.table.Status = models.StatusPaused
+
+	// Fire pause event
+	if g.onEvent != nil {
+		g.onEvent(models.Event{
+			Event:   "gamePaused",
+			TableID: g.table.TableID,
+			Data: map[string]interface{}{
+				"pausedAt": now.Format(time.RFC3339),
+			},
+		})
+	}
+
+	return nil
+}
+
+// Resume resumes a paused game and restarts the timer with remaining time
+func (g *Game) Resume() error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if g.table.Status != models.StatusPaused {
+		return fmt.Errorf("game not paused, current status: %s", g.table.Status)
+	}
+
+	// Calculate total pause duration
+	if g.pausedAt != nil {
+		g.pauseDuration += time.Since(*g.pausedAt)
+		g.pausedAt = nil
+	}
+
+	// Resume game
+	g.table.Status = models.StatusPlaying
+
+	// Restart action timer with remaining time
+	if g.table.CurrentHand != nil && g.timerRemaining > 0 {
+		currentPos := g.table.CurrentHand.CurrentPosition
+		if currentPos >= 0 && currentPos < len(g.table.Players) {
+			currentPlayer := g.table.Players[currentPos]
+			if currentPlayer != nil && isActive(currentPlayer) {
+				deadline := time.Now().Add(g.timerRemaining)
+				g.table.CurrentHand.ActionDeadline = &deadline
+
+				playerID := currentPlayer.PlayerID
+				g.actionTimer = time.AfterFunc(g.timerRemaining, func() {
+					if g.onTimeout != nil {
+						g.onTimeout(playerID)
+					}
+				})
+
+				if g.onEvent != nil {
+					g.onEvent(models.Event{
+						Event:   "actionRequired",
+						TableID: g.table.TableID,
+						Data: models.ActionRequiredEvent{
+							PlayerID: playerID,
+							Deadline: deadline.Format(time.RFC3339),
+						},
+					})
+				}
+			}
+		}
+	}
+
+	// Fire resume event
+	if g.onEvent != nil {
+		g.onEvent(models.Event{
+			Event:   "gameResumed",
+			TableID: g.table.TableID,
+			Data: map[string]interface{}{
+				"resumedAt":         time.Now().Format(time.RFC3339),
+				"totalPauseDuration": g.pauseDuration.Seconds(),
+			},
+		})
 	}
 
 	return nil

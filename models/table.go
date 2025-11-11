@@ -14,6 +14,7 @@ const (
 const (
 	StatusWaiting      TableStatus = "waiting"
 	StatusPlaying      TableStatus = "playing"
+	StatusPaused       TableStatus = "paused"
 	StatusHandComplete TableStatus = "handComplete"
 )
 

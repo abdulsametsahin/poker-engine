@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Box, Stack, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, TextField, InputAdornment, Typography } from '@mui/material';
-import { ArrowBack, ExitToApp, Terminal } from '@mui/icons-material';
+import { ArrowBack, ExitToApp, Terminal, Pause } from '@mui/icons-material';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useWebSocket } from '../contexts/WebSocketContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -446,9 +446,37 @@ export const GameView: React.FC = () => {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
+            position: 'relative',
           }}
         >
           <PokerTable tableState={tableState} currentUserId={currentUserId} />
+
+          {/* Paused Overlay */}
+          {tableState?.status === 'paused' && (
+            <Box
+              sx={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 1000,
+              }}
+            >
+              <Pause sx={{ fontSize: 80, color: COLORS.warning, mb: 2 }} />
+              <Typography variant="h4" sx={{ color: 'white', mb: 1, fontWeight: 'bold' }}>
+                Game Paused
+              </Typography>
+              <Typography variant="body1" sx={{ color: COLORS.text.secondary }}>
+                Tournament is currently paused. Waiting for resume...
+              </Typography>
+            </Box>
+          )}
         </Box>
 
         {/* Right side - Sidebar */}

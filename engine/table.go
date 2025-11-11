@@ -202,6 +202,24 @@ func (t *Table) GetState() *models.Table {
 	return t.model
 }
 
+func (t *Table) GetGame() *Game {
+	return t.game
+}
+
+func (t *Table) Pause() error {
+	if t.game == nil {
+		return fmt.Errorf("no active game to pause")
+	}
+	return t.game.Pause()
+}
+
+func (t *Table) Resume() error {
+	if t.game == nil {
+		return fmt.Errorf("no active game to resume")
+	}
+	return t.game.Resume()
+}
+
 func (t *Table) Stop() {
 	if t.blindsTimer != nil {
 		t.blindsTimer.Stop()
