@@ -17,7 +17,7 @@ CREATE TABLE tables (
     id VARCHAR(36) PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     game_type ENUM('cash', 'tournament') NOT NULL,
-    status ENUM('waiting', 'playing', 'completed') DEFAULT 'waiting',
+    status ENUM('waiting', 'playing', 'paused', 'completed') DEFAULT 'waiting',
     small_blind INT NOT NULL,
     big_blind INT NOT NULL,
     max_players INT NOT NULL,
@@ -48,7 +48,7 @@ CREATE TABLE table_seats (
 CREATE TABLE tournaments (
     id VARCHAR(36) PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
-    status ENUM('registering', 'starting', 'in_progress', 'completed') DEFAULT 'registering',
+    status ENUM('registering', 'starting', 'in_progress', 'paused', 'completed', 'cancelled') DEFAULT 'registering',
     buy_in INT NOT NULL,
     starting_chips INT NOT NULL,
     max_players INT NOT NULL,
