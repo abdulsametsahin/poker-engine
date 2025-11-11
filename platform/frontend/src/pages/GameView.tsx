@@ -138,13 +138,28 @@ export const GameView: React.FC = () => {
               ? newPlayer.last_action_amount
               : undefined;
 
-            setHistory(prev => [...prev, {
-              id: `${newPlayer.user_id}-${Date.now()}`,
-              playerName,
-              action: actionName,
-              amount,
-              timestamp: new Date(),
-            }]);
+            // Check if this exact action was already added in the last 500ms to prevent duplicates
+            setHistory(prev => {
+              const now = Date.now();
+              const recentDuplicate = prev.some(entry =>
+                entry.playerName === playerName &&
+                entry.action === actionName &&
+                entry.amount === amount &&
+                now - new Date(entry.timestamp).getTime() < 500
+              );
+
+              if (recentDuplicate) {
+                return prev; // Skip duplicate
+              }
+
+              return [...prev, {
+                id: `${newPlayer.user_id}-${Date.now()}`,
+                playerName,
+                action: actionName,
+                amount,
+                timestamp: new Date(),
+              }];
+            });
           }
         });
       }
