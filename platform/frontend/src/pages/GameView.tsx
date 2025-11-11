@@ -1,12 +1,13 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Box, Stack, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, TextField, InputAdornment, Typography } from '@mui/material';
-import { ArrowBack, ExitToApp } from '@mui/icons-material';
+import { ArrowBack, ExitToApp, Terminal } from '@mui/icons-material';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useWebSocket } from '../contexts/WebSocketContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { PokerTable } from '../components/game/PokerTable';
 import { GameSidebar } from '../components/game/GameSidebar';
+import { ConsolePanel } from '../components/game/ConsolePanel';
 import { WinnerDisplay, HandCompleteDisplay } from '../components/modals';
 import { Button } from '../components/common/Button';
 import { Badge } from '../components/common/Badge';
@@ -39,6 +40,8 @@ export const GameView: React.FC = () => {
   const [showGameComplete, setShowGameComplete] = useState(false);
   const [gameMode, setGameMode] = useState<string>('heads_up');
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
+  const [consoleOpen, setConsoleOpen] = useState(false);
+  const [consoleLogs, setConsoleLogs] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>(() => {
     // Load history from localStorage on mount
     try {
@@ -58,6 +61,20 @@ export const GameView: React.FC = () => {
   // Find current user
   const currentUserId = user?.id || tableState?.players?.find(p => p.cards && p.cards.length > 0)?.user_id;
   const currentPlayer = tableState?.players?.find(p => p.user_id === currentUserId);
+
+  // Helper function to add console logs
+  const addConsoleLog = useCallback((category: string, message: string, level: 'info' | 'warning' | 'error' | 'success' | 'debug' = 'info') => {
+    setConsoleLogs(prev => [
+      ...prev,
+      {
+        id: `${Date.now()}-${Math.random()}`,
+        timestamp: new Date(),
+        level,
+        category,
+        message,
+      },
+    ]);
+  }, []);
   const isMyTurn = tableState?.current_turn === currentUserId;
 
   // Save history to localStorage whenever it changes
@@ -110,6 +127,9 @@ export const GameView: React.FC = () => {
   // Handle WebSocket messages
   useEffect(() => {
     const handleTableState = (message: WSMessage) => {
+      // Log the message receipt
+      addConsoleLog('WEBSOCKET', `Received ${message.type} message`, 'debug');
+
       const newState = {
         table_id: message.payload.table_id || tableId,
         players: message.payload.players || [],
@@ -137,6 +157,10 @@ export const GameView: React.FC = () => {
             const amount = newPlayer.last_action_amount !== undefined && newPlayer.last_action_amount > 0
               ? newPlayer.last_action_amount
               : undefined;
+
+            // Log to console
+            const amountStr = amount ? ` $${amount}` : '';
+            addConsoleLog('ACTION', `${playerName} ${actionName}${amountStr}`, 'info');
 
             // Check if this exact action was already added in the last 500ms to prevent duplicates
             setHistory(prev => {
@@ -184,10 +208,20 @@ export const GameView: React.FC = () => {
         // Don't clear history - keep it persistent across hands
       }
 
+      // Log game state changes
+      if (tableState?.status !== newState.status) {
+        addConsoleLog('GAME_STATE', `Status changed: ${tableState?.status || 'none'} → ${newState.status}`, 'info');
+      }
+
+      if (tableState?.betting_round !== newState.betting_round && newState.betting_round) {
+        addConsoleLog('GAME_STATE', `Betting round: ${newState.betting_round}`, 'info');
+      }
+
       setTableState(newState);
 
       // Show hand complete display when hand is complete (not game complete)
       if (newState.status === 'handComplete' && newState.winners && newState.winners.length > 0) {
+        addConsoleLog('GAME_STATE', `Hand complete! Winners: ${newState.winners.map((w: any) => w.playerName).join(', ')}`, 'success');
         setShowHandComplete(true);
       }
     };
@@ -232,15 +266,18 @@ export const GameView: React.FC = () => {
       removeMessageHandler('game_complete');
       removeMessageHandler('error');
     };
-  }, [tableId, tableState?.status, addMessageHandler, removeMessageHandler, showSuccess, showError]);
+  }, [tableId, tableState?.status, tableState?.betting_round, addMessageHandler, removeMessageHandler, showSuccess, showError, addConsoleLog]);
 
   const handleAction = useCallback((action: string, amount?: number) => {
+    const amountStr = amount ? ` $${amount}` : '';
+    addConsoleLog('ACTION', `You ${action}${amountStr}`, 'success');
+
     sendMessage({
       type: 'game_action',
       payload: { action, amount: amount || 0 },
     });
     // Note: History will be updated automatically when state changes are received
-  }, [sendMessage]);
+  }, [sendMessage, addConsoleLog]);
 
   const handleSendChatMessage = useCallback((message: string) => {
     // For now, just add to local state
@@ -360,18 +397,34 @@ export const GameView: React.FC = () => {
           )}
         </Stack>
 
-        <IconButton
-          onClick={() => setLeaveDialogOpen(true)}
-          sx={{
-            color: COLORS.danger.main,
-            '&:hover': {
-              color: COLORS.danger.light,
-              background: `${COLORS.danger.main}20`,
-            },
-          }}
-        >
-          <ExitToApp />
-        </IconButton>
+        <Stack direction="row" spacing={1}>
+          <IconButton
+            onClick={() => setConsoleOpen(true)}
+            sx={{
+              color: COLORS.info.main,
+              '&:hover': {
+                color: COLORS.info.light,
+                background: `${COLORS.info.main}20`,
+              },
+            }}
+            title="View Console Logs"
+          >
+            <Terminal />
+          </IconButton>
+
+          <IconButton
+            onClick={() => setLeaveDialogOpen(true)}
+            sx={{
+              color: COLORS.danger.main,
+              '&:hover': {
+                color: COLORS.danger.light,
+                background: `${COLORS.danger.main}20`,
+              },
+            }}
+          >
+            <ExitToApp />
+          </IconButton>
+        </Stack>
       </Box>
 
       {/* Main content area - Two column layout */}
@@ -575,6 +628,53 @@ export const GameView: React.FC = () => {
       )}
 
       {/* Leave game confirmation dialog */}
+      {/* Console Dialog */}
+      <Dialog
+        open={consoleOpen}
+        onClose={() => setConsoleOpen(false)}
+        maxWidth="lg"
+        fullWidth
+        PaperProps={{
+          sx: {
+            background: COLORS.background.paper,
+            borderRadius: RADIUS.md,
+            border: `1px solid ${COLORS.border.main}`,
+            height: '80vh',
+            maxHeight: '800px',
+          },
+        }}
+      >
+        <DialogTitle
+          sx={{
+            color: COLORS.text.primary,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            borderBottom: `1px solid ${COLORS.border.main}`,
+          }}
+        >
+          <Terminal sx={{ color: COLORS.info.main }} />
+          Console Logs - Table {tableId}
+        </DialogTitle>
+        <DialogContent sx={{ p: 0, height: 'calc(100% - 120px)' }}>
+          <ConsolePanel logs={consoleLogs} />
+        </DialogContent>
+        <DialogActions sx={{ borderTop: `1px solid ${COLORS.border.main}`, p: 2 }}>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setConsoleLogs([]);
+            }}
+          >
+            Clear Logs
+          </Button>
+          <Button variant="primary" onClick={() => setConsoleOpen(false)}>
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Leave Game Dialog */}
       <Dialog
         open={leaveDialogOpen}
         onClose={() => setLeaveDialogOpen(false)}
