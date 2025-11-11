@@ -1425,7 +1425,8 @@ func processGameAction(userID, tableID, action string, amount int) {
 			log.Printf("No hand ID found for table %s to save action", tableID)
 		}
 
-		broadcastTableState(tableID)
+		// Note: broadcastTableState is handled by the engine event handler (line 1099)
+		// to avoid duplicate broadcasts for each action
 	}
 }
 
