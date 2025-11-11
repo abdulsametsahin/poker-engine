@@ -121,10 +121,11 @@ func DistributeWinnings(pot models.Pot, players []*models.Player, communityCards
 			totalPot += sp.Amount
 		}
 		winners = append(winners, models.Winner{
-			PlayerID:  activePlayers[0].PlayerID,
-			Amount:    totalPot,
-			HandRank:  "Winner by default",
-			HandCards: activePlayers[0].Cards,
+			PlayerID:   activePlayers[0].PlayerID,
+			PlayerName: activePlayers[0].PlayerName,
+			Amount:     totalPot,
+			HandRank:   "Winner by default",
+			HandCards:  activePlayers[0].Cards,
 		})
 		return winners
 	}
@@ -233,10 +234,11 @@ func DistributeWinnings(pot models.Pot, players []*models.Player, communityCards
 	for _, pe := range playerEvals {
 		if amount, won := playerWinnings[pe.Player.PlayerID]; won && amount > 0 {
 			winners = append(winners, models.Winner{
-				PlayerID:  pe.Player.PlayerID,
-				Amount:    amount,
-				HandRank:  pe.Eval.Rank.String(),
-				HandCards: pe.Eval.Cards,
+				PlayerID:   pe.Player.PlayerID,
+				PlayerName: pe.Player.PlayerName,
+				Amount:     amount,
+				HandRank:   pe.Eval.Rank.String(),
+				HandCards:  pe.Eval.Cards,
 			})
 		}
 	}
