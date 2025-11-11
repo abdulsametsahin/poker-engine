@@ -10,7 +10,7 @@ coverage/
 .nyc_output/
 
 # Production
-build/
+# build/ - Now included for Docker deployment
 dist/
 
 # Environment files
