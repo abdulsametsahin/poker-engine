@@ -40,96 +40,97 @@ export const GameSidebar: React.FC<GameSidebarProps> = memo(({
   const unreadCount = 0; // You can implement proper unread tracking
 
   return (
-    <>
-      {/* Always visible panel */}
+    <Box
+      sx={{
+        width: 340,
+        minWidth: 340,
+        display: 'flex',
+        flexDirection: 'column',
+        borderLeft: `1px solid ${COLORS.border.main}`,
+        background: 'rgba(10, 10, 10, 0.8)',
+        backdropFilter: 'blur(10px)',
+        overflow: 'hidden',
+      }}
+    >
+      {/* Header with tabs */}
       <Box
         sx={{
-          position: 'fixed',
-          top: 16,
-          right: 16,
-          bottom: 16,
-          width: 320,
-          maxWidth: 'calc(100vw - 32px)',
           display: 'flex',
-          flexDirection: 'column',
-          borderRadius: RADIUS.lg,
-          background: 'rgba(15, 15, 15, 0.95)',
-          backdropFilter: 'blur(20px)',
-          border: `2px solid ${COLORS.primary.main}`,
-          boxShadow: `
-            0 20px 60px rgba(0, 0, 0, 0.8),
-            0 0 30px ${COLORS.primary.glow}
-          `,
-          overflow: 'hidden',
-          zIndex: 100,
+          alignItems: 'center',
+          px: 2,
+          py: 1.5,
+          borderBottom: `1px solid ${COLORS.border.main}`,
+          background: `linear-gradient(135deg, ${COLORS.primary.main}15 0%, ${COLORS.secondary.main}15 100%)`,
         }}
       >
-        {/* Header with tabs */}
-        <Box
+        <Tabs
+          value={activeTab}
+          onChange={(_, newValue) => setActiveTab(newValue)}
           sx={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            px: 1,
-            py: 0.5,
-            borderBottom: `1px solid ${COLORS.border.main}`,
-            background: `linear-gradient(135deg, ${COLORS.primary.main}20 0%, ${COLORS.secondary.main}20 100%)`,
+            minHeight: 40,
+            width: '100%',
+            '& .MuiTabs-indicator': {
+              backgroundColor: COLORS.primary.main,
+              height: 3,
+            },
           }}
         >
-          <Tabs
-            value={activeTab}
-            onChange={(_, newValue) => setActiveTab(newValue)}
+          <Tab
+            icon={<History sx={{ fontSize: 18 }} />}
+            label="History"
             sx={{
-              minHeight: 36,
-              flex: 1,
-              '& .MuiTabs-indicator': {
-                backgroundColor: COLORS.info.main,
+              minHeight: 40,
+              fontSize: 12,
+              fontWeight: 600,
+              color: COLORS.text.secondary,
+              transition: TRANSITIONS.fast,
+              '&.Mui-selected': {
+                color: COLORS.primary.main,
+              },
+              '&:hover': {
+                color: COLORS.text.primary,
               },
             }}
-          >
-            <Tab
-              icon={<History sx={{ fontSize: 16 }} />}
-              label="History"
-              sx={{
-                minHeight: 36,
-                fontSize: 11,
-                fontWeight: 600,
-                color: COLORS.text.secondary,
-                '&.Mui-selected': {
-                  color: COLORS.info.main,
-                },
-              }}
-            />
-            <Tab
-              icon={<Chat sx={{ fontSize: 16 }} />}
-              label="Chat"
-              sx={{
-                minHeight: 36,
-                fontSize: 11,
-                fontWeight: 600,
-                color: COLORS.text.secondary,
-                '&.Mui-selected': {
-                  color: COLORS.info.main,
-                },
-              }}
-            />
-          </Tabs>
-        </Box>
-
-        {/* Panel content */}
-        <Box sx={{ flex: 1, overflow: 'hidden', p: 1.5 }}>
-          {activeTab === 0 ? (
-            <HistoryPanel history={history} />
-          ) : (
-            <ChatPanel
-              messages={messages}
-              currentUserId={currentUserId}
-              onSendMessage={onSendMessage}
-            />
-          )}
-        </Box>
+          />
+          <Tab
+            icon={<Chat sx={{ fontSize: 18 }} />}
+            label="Chat"
+            sx={{
+              minHeight: 40,
+              fontSize: 12,
+              fontWeight: 600,
+              color: COLORS.text.secondary,
+              transition: TRANSITIONS.fast,
+              '&.Mui-selected': {
+                color: COLORS.primary.main,
+              },
+              '&:hover': {
+                color: COLORS.text.primary,
+              },
+            }}
+          />
+        </Tabs>
       </Box>
-    </>
+
+      {/* Panel content */}
+      <Box
+        sx={{
+          flex: 1,
+          overflow: 'hidden',
+          p: 2,
+        }}
+      >
+        {activeTab === 0 ? (
+          <HistoryPanel history={history} />
+        ) : (
+          <ChatPanel
+            messages={messages}
+            currentUserId={currentUserId}
+            onSendMessage={onSendMessage}
+          />
+        )}
+      </Box>
+    </Box>
   );
 });
 
