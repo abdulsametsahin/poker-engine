@@ -13,6 +13,7 @@ import (
 	"poker-platform/backend/internal/auth"
 	"poker-platform/backend/internal/db"
 	"poker-platform/backend/internal/models"
+	"poker-platform/backend/internal/recovery"
 	"poker-platform/backend/internal/tournament"
 
 	"poker-engine/engine"
@@ -172,6 +173,9 @@ func main() {
 	// Start tournament services in background
 	go tournamentStarter.Start()
 	go blindManager.Start()
+
+	// Recover active tables from database
+	recoverTablesOnStartup()
 
 	// Set Gin mode based on environment
 	if getEnv("ENV", "development") == "production" {
@@ -1409,8 +1413,9 @@ func processGameAction(userID, tableID, action string, amount int) {
 	var bettingRound string
 	if state.CurrentHand != nil {
 		bettingRound = string(state.CurrentHand.BettingRound)
+		pot := state.CurrentHand.Pot.Main + sumSidePots(state.CurrentHand.Pot.Side)
 		log.Printf("[ACTION] Current state: betting_round=%s current_bet=%d pot=%d",
-			bettingRound, state.CurrentHand.CurrentBet, state.CurrentHand.Pot.Main)
+			bettingRound, state.CurrentHand.CurrentBet, pot)
 	}
 
 	var playerAction pokerModels.PlayerAction
@@ -2408,4 +2413,118 @@ func getEnv(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+// recoverTablesOnStartup restores all active tables from the database on server startup
+func recoverTablesOnStartup() {
+	log.Println("============================================================")
+	log.Println("🔄 STARTING TABLE RECOVERY PROCESS")
+	log.Println("============================================================")
+
+	tableRecovery := recovery.NewTableRecovery(database.DB)
+
+	// Cleanup orphaned data first
+	if err := tableRecovery.CleanupOrphanedData(); err != nil {
+		log.Printf("⚠️  Warning: Failed to cleanup orphaned data: %v", err)
+	}
+
+	// Create table factory function
+	createTableFunc := func(tableID, gameType string, smallBlind, bigBlind, maxPlayers, minBuyIn, maxBuyIn int, tournamentID *string) *engine.Table {
+		var gt pokerModels.GameType
+		if gameType == "tournament" {
+			gt = pokerModels.GameTypeTournament
+		} else {
+			gt = pokerModels.GameTypeCash
+		}
+
+		config := pokerModels.TableConfig{
+			SmallBlind:    smallBlind,
+			BigBlind:      bigBlind,
+			MaxPlayers:    maxPlayers,
+			MinBuyIn:      minBuyIn,
+			MaxBuyIn:      maxBuyIn,
+			ActionTimeout: 30,
+		}
+
+		onTimeout := func(playerID string) {
+			log.Printf("Player %s timed out", playerID)
+			bridge.mu.RLock()
+			table, exists := bridge.tables[tableID]
+			bridge.mu.RUnlock()
+			if exists {
+				err := table.HandleTimeout(playerID)
+				if err != nil {
+					log.Printf("Error handling timeout for player %s: %v", playerID, err)
+				} else {
+					log.Printf("Player %s auto-folded due to timeout", playerID)
+					broadcastTableState(tableID)
+				}
+			}
+		}
+
+		onEvent := func(event pokerModels.Event) {
+			if gt == pokerModels.GameTypeTournament {
+				handleTournamentEngineEvent(tableID, event)
+			} else {
+				handleEngineEvent(tableID, event)
+			}
+		}
+
+		table := engine.NewTable(tableID, gt, config, onTimeout, onEvent)
+		return table
+	}
+
+	// Recover cash game tables
+	cashTables, err := tableRecovery.RecoverActiveTables(createTableFunc)
+	if err != nil {
+		log.Printf("❌ Failed to recover cash game tables: %v", err)
+	} else {
+		// Add recovered tables to bridge
+		bridge.mu.Lock()
+		for tableID, table := range cashTables {
+			bridge.tables[tableID] = table
+		}
+		bridge.mu.Unlock()
+		log.Printf("✓ Added %d cash game tables to engine", len(cashTables))
+	}
+
+	// Recover tournament tables
+	tournamentTables, err := tableRecovery.RecoverTournamentTables(createTableFunc)
+	if err != nil {
+		log.Printf("❌ Failed to recover tournament tables: %v", err)
+	} else {
+		// Add recovered tournament tables to bridge
+		bridge.mu.Lock()
+		for tableID, table := range tournamentTables {
+			bridge.tables[tableID] = table
+		}
+		bridge.mu.Unlock()
+		log.Printf("✓ Added %d tournament tables to engine", len(tournamentTables))
+	}
+
+	// Merge all tables for game startup
+	allTables := make(map[string]*engine.Table)
+	for k, v := range cashTables {
+		allTables[k] = v
+	}
+	for k, v := range tournamentTables {
+		allTables[k] = v
+	}
+
+	// Check and start games after a delay
+	if len(allTables) > 0 {
+		go tableRecovery.CheckAndStartGames(allTables, 3*time.Second)
+	}
+
+	// Print recovery stats
+	stats, _ := tableRecovery.GetRecoveryStats()
+	log.Println("============================================================")
+	log.Println("📊 RECOVERY STATISTICS:")
+	log.Printf("   Active Tables: %v", stats["active_tables"])
+	log.Printf("   Active Tournaments: %v", stats["active_tournaments"])
+	log.Printf("   Active Seats: %v", stats["active_seats"])
+	log.Printf("   Incomplete Hands: %v", stats["incomplete_hands"])
+	log.Println("============================================================")
+	log.Println("✅ TABLE RECOVERY COMPLETE")
+	log.Println("============================================================")
 }
