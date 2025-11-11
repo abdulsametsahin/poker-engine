@@ -473,11 +473,73 @@ func (g *Game) HandleTimeout(playerID string) error {
 		return nil // Not this player's turn anymore, ignore
 	}
 
-	// Auto-fold the player
-	currentPlayer.Status = models.StatusFolded
-	currentPlayer.LastAction = models.ActionFold
-	currentPlayer.LastActionAmount = 0
-	currentPlayer.HasActedThisRound = true
+	// Smart timeout logic: check if possible, fold if facing a bet
+	currentBet := g.table.CurrentHand.CurrentBet
+	playerBet := currentPlayer.Bet
+
+	// Increment consecutive timeout counter
+	currentPlayer.ConsecutiveTimeouts++
+
+	// Check for repeated timeouts in tournaments (3 timeouts = sit out)
+	if g.table.GameType == models.GameTypeTournament && currentPlayer.ConsecutiveTimeouts >= 3 {
+		// Mark player as sitting out
+		currentPlayer.Status = models.StatusSittingOut
+		currentPlayer.LastAction = models.ActionFold
+		currentPlayer.LastActionAmount = 0
+		currentPlayer.HasActedThisRound = true
+
+		if g.onEvent != nil {
+			g.onEvent(models.Event{
+				Event:   "playerSitOut",
+				TableID: g.table.TableID,
+				Data: map[string]interface{}{
+					"playerId": playerID,
+					"reason":   "consecutive_timeouts",
+				},
+			})
+		}
+	} else {
+		// Determine the appropriate auto-action
+		if currentBet > playerBet {
+			// Player is facing a bet -> auto-fold
+			currentPlayer.Status = models.StatusFolded
+			currentPlayer.LastAction = models.ActionFold
+			currentPlayer.LastActionAmount = 0
+			currentPlayer.HasActedThisRound = true
+
+			if g.onEvent != nil {
+				g.onEvent(models.Event{
+					Event:   "playerAction",
+					TableID: g.table.TableID,
+					Data: map[string]interface{}{
+						"playerId":            playerID,
+						"action":              "fold",
+						"reason":              "timeout",
+						"consecutiveTimeouts": currentPlayer.ConsecutiveTimeouts,
+					},
+				})
+			}
+		} else {
+			// No bet to call -> auto-check
+			currentPlayer.LastAction = models.ActionCheck
+			currentPlayer.LastActionAmount = 0
+			currentPlayer.HasActedThisRound = true
+			// Status remains Active
+
+			if g.onEvent != nil {
+				g.onEvent(models.Event{
+					Event:   "playerAction",
+					TableID: g.table.TableID,
+					Data: map[string]interface{}{
+						"playerId":            playerID,
+						"action":              "check",
+						"reason":              "timeout",
+						"consecutiveTimeouts": currentPlayer.ConsecutiveTimeouts,
+					},
+				})
+			}
+		}
+	}
 
 	// Check if betting round is complete
 	if g.isBettingRoundComplete() {
