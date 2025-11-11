@@ -1,0 +1,3 @@
+# Ignore data directories (these are mounted as volumes)
+data/
+*.log
