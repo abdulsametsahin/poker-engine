@@ -1410,7 +1410,7 @@ func processGameAction(userID, tableID, action string, amount int) {
 	if state.CurrentHand != nil {
 		bettingRound = string(state.CurrentHand.BettingRound)
 		log.Printf("[ACTION] Current state: betting_round=%s current_bet=%d pot=%d",
-			bettingRound, state.CurrentBet, state.Pot)
+			bettingRound, state.CurrentHand.CurrentBet, state.CurrentHand.Pot.Main)
 	}
 
 	var playerAction pokerModels.PlayerAction
