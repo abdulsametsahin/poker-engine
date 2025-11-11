@@ -18,6 +18,7 @@ func (ap *ActionProcessor) processFold(player *models.Player) {
 	player.Status = models.StatusFolded
 	player.LastAction = models.ActionFold
 	player.LastActionAmount = 0
+	player.ConsecutiveTimeouts = 0 // Reset timeout counter on action
 }
 
 func (ap *ActionProcessor) processCheck(player *models.Player) error {
@@ -26,6 +27,7 @@ func (ap *ActionProcessor) processCheck(player *models.Player) error {
 	}
 	player.LastAction = models.ActionCheck
 	player.LastActionAmount = 0
+	player.ConsecutiveTimeouts = 0 // Reset timeout counter on action
 	return nil
 }
 
@@ -38,6 +40,7 @@ func (ap *ActionProcessor) processCall(player *models.Player, currentBet int) {
 		player.LastAction = models.ActionCall
 		player.LastActionAmount = callAmount
 	}
+	player.ConsecutiveTimeouts = 0 // Reset timeout counter on action
 }
 
 func (ap *ActionProcessor) processAllInCall(player *models.Player, amount int) {
@@ -45,6 +48,7 @@ func (ap *ActionProcessor) processAllInCall(player *models.Player, amount int) {
 	player.Status = models.StatusAllIn
 	player.LastAction = models.ActionAllIn
 	player.LastActionAmount = amount
+	player.ConsecutiveTimeouts = 0 // Reset timeout counter on action
 }
 
 func (ap *ActionProcessor) processRaise(player *models.Player, amount int, currentBet *int, minRaise *int) error {
@@ -60,6 +64,7 @@ func (ap *ActionProcessor) processRaise(player *models.Player, amount int, curre
 	player.PlaceBet(amountToAdd)
 	player.LastAction = models.ActionRaise
 	player.LastActionAmount = amountToAdd
+	player.ConsecutiveTimeouts = 0 // Reset timeout counter on action
 
 	*minRaise = player.Bet - *currentBet
 	*currentBet = player.Bet
@@ -73,6 +78,7 @@ func (ap *ActionProcessor) processAllInRaise(player *models.Player, amount int, 
 	player.Status = models.StatusAllIn
 	player.LastAction = models.ActionAllIn
 	player.LastActionAmount = amount
+	player.ConsecutiveTimeouts = 0 // Reset timeout counter on action
 
 	if ap.validator.isFullRaise(player.Bet) {
 		*minRaise = player.Bet - *currentBet

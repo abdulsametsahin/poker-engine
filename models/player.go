@@ -34,6 +34,7 @@ type Player struct {
 	LastActionAmount       int          `json:"lastActionAmount,omitempty"`
 	TotalInvestedThisHand  int          `json:"totalInvestedThisHand"`
 	HasActedThisRound      bool         `json:"-"`
+	ConsecutiveTimeouts    int          `json:"-"` // Tracks consecutive timeouts for sit-out logic
 }
 
 func NewPlayer(id, name string, seatNumber, chips int) *Player {
