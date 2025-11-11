@@ -39,13 +39,37 @@ export const GameView: React.FC = () => {
   const [showGameComplete, setShowGameComplete] = useState(false);
   const [gameMode, setGameMode] = useState<string>('heads_up');
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
-  const [history, setHistory] = useState<any[]>([]);
+  const [history, setHistory] = useState<any[]>(() => {
+    // Load history from localStorage on mount
+    try {
+      const savedHistory = localStorage.getItem(`game_history_${tableId}`);
+      return savedHistory ? JSON.parse(savedHistory, (key, value) => {
+        // Restore Date objects
+        if (key === 'timestamp') return new Date(value);
+        return value;
+      }) : [];
+    } catch (error) {
+      console.error('Failed to load history from localStorage:', error);
+      return [];
+    }
+  });
   const [chatMessages, setChatMessages] = useState<any[]>([]);
 
   // Find current user
   const currentUserId = user?.id || tableState?.players?.find(p => p.cards && p.cards.length > 0)?.user_id;
   const currentPlayer = tableState?.players?.find(p => p.user_id === currentUserId);
   const isMyTurn = tableState?.current_turn === currentUserId;
+
+  // Save history to localStorage whenever it changes
+  useEffect(() => {
+    if (tableId && history.length > 0) {
+      try {
+        localStorage.setItem(`game_history_${tableId}`, JSON.stringify(history));
+      } catch (error) {
+        console.error('Failed to save history to localStorage:', error);
+      }
+    }
+  }, [history, tableId]);
 
   // Debug logging
   useEffect(() => {
@@ -108,8 +132,10 @@ export const GameView: React.FC = () => {
           if (oldPlayer && newPlayer.last_action && newPlayer.last_action !== oldPlayer.last_action) {
             const actionName = newPlayer.last_action.toLowerCase();
             const playerName = newPlayer.username || 'Player';
-            const amount = newPlayer.current_bet && newPlayer.current_bet > (oldPlayer.current_bet || 0)
-              ? newPlayer.current_bet - (oldPlayer.current_bet || 0)
+
+            // Use last_action_amount from backend if available, otherwise undefined
+            const amount = newPlayer.last_action_amount !== undefined && newPlayer.last_action_amount > 0
+              ? newPlayer.last_action_amount
               : undefined;
 
             setHistory(prev => [...prev, {
@@ -140,8 +166,7 @@ export const GameView: React.FC = () => {
       ) {
         setShowHandComplete(false);
         setShowGameComplete(false);
-        // Clear history when new hand starts
-        setHistory([]);
+        // Don't clear history - keep it persistent across hands
       }
 
       setTableState(newState);
@@ -161,6 +186,15 @@ export const GameView: React.FC = () => {
       showSuccess('Game complete!');
       setShowHandComplete(false); // Hide hand complete if showing
       setShowGameComplete(true);
+
+      // Clear history from localStorage when game ends
+      if (tableId) {
+        try {
+          localStorage.removeItem(`game_history_${tableId}`);
+        } catch (error) {
+          console.error('Failed to clear history from localStorage:', error);
+        }
+      }
 
       // Update table state with game complete info
       if (message.payload) {
