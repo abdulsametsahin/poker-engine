@@ -1005,12 +1005,35 @@ func handleEngineEvent(tableID string, event pokerModels.Event) {
 
 	switch event.Event {
 	case "handStart":
-		log.Printf("[ENGINE_EVENT] Hand started on table %s", tableID)
+		data, _ := event.Data.(map[string]interface{})
+		handNumber := data["handNumber"]
+		log.Printf("[ENGINE_EVENT] Hand #%v started on table %s", handNumber, tableID)
+		log.Printf("[HAND_START] Hand #%v - Dealer position: %v, SB position: %v, BB position: %v",
+			handNumber, data["dealerPosition"], data["smallBlindPosition"], data["bigBlindPosition"])
 		// Create hand record at the start of the hand
 		createHandRecord(tableID, event)
 		broadcastTableState(tableID)
 
 	case "handComplete":
+		log.Printf("[ENGINE_EVENT] Hand completed on table %s", tableID)
+
+		// Log hand completion details
+		bridge.mu.RLock()
+		table, exists := bridge.tables[tableID]
+		bridge.mu.RUnlock()
+
+		if exists {
+			state := table.GetState()
+			log.Printf("[HAND_COMPLETE] Community cards: %v", state.CurrentHand.CommunityCards)
+			if len(state.Winners) > 0 {
+				for _, winner := range state.Winners {
+					log.Printf("[HAND_COMPLETE] Winner: %s won %d chips with %s",
+						winner.PlayerName, winner.Amount, winner.HandRank)
+				}
+			}
+			log.Printf("[HAND_COMPLETE] Pot: %d chips", state.CurrentHand.Pot.Main)
+		}
+
 		// Update hand data with final results
 		updateHandRecord(tableID, event)
 
@@ -1130,6 +1153,19 @@ func handleEngineEvent(tableID string, event pokerModels.Event) {
 
 	case "roundAdvanced":
 		log.Printf("[ENGINE_EVENT] Betting round advanced on table %s", tableID)
+
+		// Log community cards for the new round
+		bridge.mu.RLock()
+		table, exists := bridge.tables[tableID]
+		bridge.mu.RUnlock()
+
+		if exists {
+			state := table.GetState()
+			roundName := string(state.CurrentHand.BettingRound)
+			cards := state.CurrentHand.CommunityCards
+			log.Printf("[ROUND_ADVANCED] %s - Community cards: %v", roundName, cards)
+		}
+
 		broadcastTableState(tableID)
 
 	case "cardDealt":
@@ -1857,13 +1893,34 @@ func handleTournamentEngineEvent(tableID string, event pokerModels.Event) {
 
 	switch event.Event {
 	case "handStart":
-		log.Printf("[ENGINE_EVENT] Hand started on tournament table %s", tableID)
+		data, _ := event.Data.(map[string]interface{})
+		handNumber := data["handNumber"]
+		log.Printf("[ENGINE_EVENT] Hand #%v started on tournament table %s", handNumber, tableID)
+		log.Printf("[HAND_START] Hand #%v - Dealer position: %v, SB position: %v, BB position: %v",
+			handNumber, data["dealerPosition"], data["smallBlindPosition"], data["bigBlindPosition"])
 		// Create hand record at the start of the hand
 		createHandRecord(tableID, event)
 		broadcastTableState(tableID)
 
 	case "handComplete":
 		log.Printf("[ENGINE_EVENT] Hand completed on tournament table %s", tableID)
+
+		// Log hand completion details
+		bridge.mu.RLock()
+		table, exists := bridge.tables[tableID]
+		bridge.mu.RUnlock()
+
+		if exists {
+			state := table.GetState()
+			log.Printf("[HAND_COMPLETE] Community cards: %v", state.CurrentHand.CommunityCards)
+			if len(state.Winners) > 0 {
+				for _, winner := range state.Winners {
+					log.Printf("[HAND_COMPLETE] Winner: %s won %d chips with %s",
+						winner.PlayerName, winner.Amount, winner.HandRank)
+				}
+			}
+			log.Printf("[HAND_COMPLETE] Pot: %d chips", state.CurrentHand.Pot.Main)
+		}
 
 		// Update hand data with final results
 		updateHandRecord(tableID, event)
@@ -1927,6 +1984,57 @@ func handleTournamentEngineEvent(tableID string, event pokerModels.Event) {
 			} else {
 				log.Printf("[TOURNAMENT] Cannot start next hand on table %s: Only %d active players (need 2+)",
 					tableID, activeCount)
+
+				// Check if only one player remains with chips - complete tournament
+				if activeCount == 1 {
+					log.Printf("[TOURNAMENT] Only 1 active player remains, completing tournament table %s", tableID)
+
+					// Get tournament ID
+					var dbTable models.Table
+					if err := database.Where("id = ?", tableID).First(&dbTable).Error; err != nil {
+						log.Printf("[TOURNAMENT] Error getting table: %v", err)
+						return
+					}
+
+					if dbTable.TournamentID == nil {
+						log.Printf("[TOURNAMENT] Table %s is not a tournament table", tableID)
+						return
+					}
+
+					tournamentID := *dbTable.TournamentID
+
+					// Eliminate all sitting out players
+					for _, p := range state.Players {
+						if p != nil && (p.Status == pokerModels.StatusSittingOut || p.Chips == 0) {
+							if err := eliminationTracker.EliminatePlayer(tournamentID, p.PlayerID); err != nil {
+								log.Printf("[TOURNAMENT] Error eliminating player %s: %v", p.PlayerID, err)
+							}
+						}
+					}
+
+					// Tournament elimination tracker will automatically complete the tournament
+					// when only 1 player remains
+				} else if activeCount == 0 {
+					// No active players - all sitting out
+					log.Printf("[TOURNAMENT] No active players remaining on table %s", tableID)
+
+					// Get tournament ID
+					var dbTable models.Table
+					if err := database.Where("id = ?", tableID).First(&dbTable).Error; err != nil {
+						log.Printf("[TOURNAMENT] Error getting table: %v", err)
+						return
+					}
+
+					if dbTable.TournamentID != nil {
+						// Mark table as completed
+						now := time.Now()
+						database.Model(&models.Table{}).Where("id = ?", tableID).Updates(map[string]interface{}{
+							"status":       "completed",
+							"completed_at": &now,
+						})
+						log.Printf("[TOURNAMENT] Table %s marked as completed (no active players)", tableID)
+					}
+				}
 			}
 		}()
 		return // Return early since we already broadcasted
@@ -1941,6 +2049,19 @@ func handleTournamentEngineEvent(tableID string, event pokerModels.Event) {
 
 	case "roundAdvanced":
 		log.Printf("[ENGINE_EVENT] Betting round advanced on tournament table %s", tableID)
+
+		// Log community cards for the new round
+		bridge.mu.RLock()
+		table, exists := bridge.tables[tableID]
+		bridge.mu.RUnlock()
+
+		if exists {
+			state := table.GetState()
+			roundName := string(state.CurrentHand.BettingRound)
+			cards := state.CurrentHand.CommunityCards
+			log.Printf("[ROUND_ADVANCED] %s - Community cards: %v", roundName, cards)
+		}
+
 		broadcastTableState(tableID)
 
 	case "cardDealt":
