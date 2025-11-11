@@ -42,11 +42,13 @@ func (g *Game) StartNewHand() error {
 
 	g.table.Deck = models.NewDeck()
 
+	// Reset players BEFORE finding dealer position to ensure folded/busted status from previous hand doesn't affect rotation
+	g.resetPlayers()
+
 	positionFinder := NewPositionFinder(g.table.Players)
 	dealerPos := g.findDealerPosition(positionFinder)
 	sbPos, bbPos := positionFinder.calculateBlindPositions(dealerPos, activePlayers)
 
-	g.resetPlayers()
 	g.assignPositions(dealerPos, sbPos, bbPos)
 	g.postBlinds(sbPos, bbPos)
 
@@ -96,15 +98,17 @@ func (g *Game) removeBustedPlayers() {
 }
 
 func (g *Game) findDealerPosition(positionFinder *PositionFinder) int {
+	// If this is the first hand or dealer position is invalid, find first player with chips
 	if g.table.CurrentHand.DealerPosition < 0 || g.table.CurrentHand.DealerPosition >= len(g.table.Players) {
 		return positionFinder.findFirstWithChips()
 	}
 
+	// Find the next player with chips after the current dealer
 	nextPos := positionFinder.findNextWithChips(g.table.CurrentHand.DealerPosition)
-	if g.table.Players[nextPos] != nil {
-		return nextPos
-	}
-	return g.table.CurrentHand.DealerPosition
+
+	// Always return the next position - if only one player has chips, this will be the same as current
+	// but the logic is correct (dealer stays with the only player who can play)
+	return nextPos
 }
 
 func (g *Game) resetPlayers() {
