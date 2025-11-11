@@ -11,6 +11,7 @@ export interface Player {
   is_dealer: boolean;
   is_active: boolean;
   last_action?: PlayerAction;
+  last_action_amount?: number;
 }
 
 export interface Card {
