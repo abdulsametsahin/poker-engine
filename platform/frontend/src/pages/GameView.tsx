@@ -274,9 +274,9 @@ export const GameView: React.FC = () => {
         height: '100vh',
         display: 'flex',
         flexDirection: 'column',
-        position: 'relative',
         background: `linear-gradient(135deg, ${COLORS.background.primary} 0%, ${COLORS.background.secondary} 100%)`,
         overflow: 'hidden',
+        position: 'relative',
 
         // Ambient lighting effects
         '&::before': {
@@ -318,11 +318,6 @@ export const GameView: React.FC = () => {
             opacity: 0.8,
           },
         },
-
-        '& > *': {
-          position: 'relative',
-          zIndex: 1,
-        },
       }}
     >
       {/* Header */}
@@ -336,6 +331,8 @@ export const GameView: React.FC = () => {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          position: 'relative',
+          zIndex: 10,
         }}
       >
         <Stack direction="row" spacing={2} alignItems="center">
@@ -377,28 +374,38 @@ export const GameView: React.FC = () => {
         </IconButton>
       </Box>
 
-      {/* Main game area - Full width for circular table */}
+      {/* Main content area - Two column layout */}
       <Box
         sx={{
           flex: 1,
-          p: 3,
-          overflow: 'hidden',
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
+          overflow: 'hidden',
           position: 'relative',
+          zIndex: 1,
         }}
       >
-        <PokerTable tableState={tableState} currentUserId={currentUserId} />
-      </Box>
+        {/* Left side - Poker table */}
+        <Box
+          sx={{
+            flex: 1,
+            p: 3,
+            overflow: 'hidden',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <PokerTable tableState={tableState} currentUserId={currentUserId} />
+        </Box>
 
-      {/* Floating sidebar (renders in top-right corner) */}
-      <GameSidebar
-        history={history}
-        messages={chatMessages}
-        currentUserId={currentUserId}
-        onSendMessage={handleSendChatMessage}
-      />
+        {/* Right side - Sidebar */}
+        <GameSidebar
+          history={history}
+          messages={chatMessages}
+          currentUserId={currentUserId}
+          onSendMessage={handleSendChatMessage}
+        />
+      </Box>
 
       {/* Action bar - Only show when playing and it's my turn */}
       {tableState?.status === 'playing' && isMyTurn && (
@@ -406,9 +413,11 @@ export const GameView: React.FC = () => {
           sx={{
             px: 3,
             py: 1.5,
-            background: 'rgba(0, 0, 0, 0.4)',
+            background: 'rgba(0, 0, 0, 0.6)',
             backdropFilter: 'blur(10px)',
             borderTop: `1px solid ${COLORS.border.main}`,
+            position: 'relative',
+            zIndex: 10,
           }}
         >
           <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
