@@ -158,10 +158,6 @@ export const GameView: React.FC = () => {
               ? newPlayer.last_action_amount
               : undefined;
 
-            // Log to console
-            const amountStr = amount ? ` $${amount}` : '';
-            addConsoleLog('ACTION', `${playerName} ${actionName}${amountStr}`, 'info');
-
             // Check if this exact action was already added in the last 500ms to prevent duplicates
             setHistory(prev => {
               const now = Date.now();
@@ -175,6 +171,10 @@ export const GameView: React.FC = () => {
               if (recentDuplicate) {
                 return prev; // Skip duplicate
               }
+
+              // Log to console only if not a duplicate
+              const amountStr = amount ? ` $${amount}` : '';
+              addConsoleLog('ACTION', `${playerName} ${actionName}${amountStr}`, 'info');
 
               return [...prev, {
                 id: `${newPlayer.user_id}-${Date.now()}`,
