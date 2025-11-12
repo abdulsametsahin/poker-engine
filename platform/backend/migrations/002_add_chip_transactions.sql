@@ -23,4 +23,4 @@ CREATE TABLE IF NOT EXISTS chip_transactions (
     INDEX idx_chip_transactions_transaction_type (transaction_type),
     INDEX idx_chip_transactions_reference_id (reference_id),
     INDEX idx_chip_transactions_created_at (created_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
