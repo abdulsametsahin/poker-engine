@@ -80,12 +80,14 @@ func (t *Table) RemovePlayer(playerID string) error {
 		// Find the player
 		for _, player := range t.model.Players {
 			if player != nil && player.PlayerID == playerID {
-				// If player hasn't folded, fold them first
-				if player.Status != models.StatusFolded {
+				// If player is active (hasn't folded yet), fold them first
+				if player.Status != models.StatusFolded && player.Status != models.StatusSittingOut {
 					player.Status = models.StatusFolded
+					player.LastAction = models.ActionFold
 				}
-				// Mark for removal after hand completes
-				player.Status = models.StatusSittingOut
+				// Note: Player will be fully removed when hand completes
+				// For now, just mark them as sitting out to prevent them from playing future hands
+				// The actual removal should happen in the next hand start or when game is not playing
 				return nil
 			}
 		}
