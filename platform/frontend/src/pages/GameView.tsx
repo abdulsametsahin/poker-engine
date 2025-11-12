@@ -8,11 +8,13 @@ import { useToast } from '../contexts/ToastContext';
 import { PokerTable } from '../components/game/PokerTable';
 import { GameSidebar } from '../components/game/GameSidebar';
 import { ConsolePanel } from '../components/game/ConsolePanel';
+import { TableSwitcher } from '../components/game/TableSwitcher';
 import { WinnerDisplay, HandCompleteDisplay } from '../components/modals';
 import { Button } from '../components/common/Button';
 import { Badge } from '../components/common/Badge';
 import { COLORS, RADIUS, SPACING, GAME } from '../constants';
 import { Player, WSMessage } from '../types';
+import { addActiveTable, updateTableActivity, removeActiveTable } from '../utils/tableManager';
 
 interface TableState {
   table_id?: string;
@@ -113,15 +115,36 @@ export const GameView: React.FC = () => {
     }
   }, [isMyTurn, minRaiseAmount, tableState?.status]);
 
-  // Subscribe to table on mount
+  // Subscribe to table on mount and track active table
   useEffect(() => {
     if (isConnected && tableId) {
       sendMessage({
         type: 'subscribe_table',
         payload: { table_id: tableId },
       });
+      
+      // Add to active tables list
+      addActiveTable(tableId);
     }
+    
+    // Cleanup: remove table from active list when leaving
+    return () => {
+      if (tableId) {
+        removeActiveTable(tableId);
+      }
+    };
   }, [isConnected, tableId, sendMessage]);
+  
+  // Update table activity periodically
+  useEffect(() => {
+    if (!tableId) return;
+    
+    const interval = setInterval(() => {
+      updateTableActivity(tableId);
+    }, 30000); // Update every 30 seconds
+    
+    return () => clearInterval(interval);
+  }, [tableId]);
 
   // Handle WebSocket messages
   useEffect(() => {
@@ -420,6 +443,8 @@ export const GameView: React.FC = () => {
         </Stack>
 
         <Stack direction="row" spacing={1}>
+          <TableSwitcher />
+          
           <IconButton
             onClick={() => setConsoleOpen(true)}
             sx={{
