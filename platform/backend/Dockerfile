@@ -21,7 +21,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o poker-server ./cm
 # Runtime stage
 FROM alpine:latest
 
-RUN apk --no-cache add ca-certificates tzdata
+RUN apk --no-cache add ca-certificates tzdata mysql-client bash
 
 WORKDIR /root/
 
@@ -31,8 +31,12 @@ COPY --from=builder /app/platform/backend/poker-server .
 # Copy database scripts (optional, for reference)
 COPY --from=builder /app/platform/backend/scripts ./scripts
 
+# Copy entrypoint script
+COPY --from=builder /app/platform/backend/entrypoint.sh .
+RUN chmod +x entrypoint.sh
+
 # Expose port
 EXPOSE 8080
 
-# Run the application
-CMD ["./poker-server"]
+# Set entrypoint to run migrations before starting the app
+ENTRYPOINT ["./entrypoint.sh"]
