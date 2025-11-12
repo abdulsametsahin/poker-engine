@@ -1,12 +1,15 @@
 package tournament
 
 import (
+	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
 	"time"
 
 	"poker-platform/backend/internal/db"
+	"poker-platform/backend/internal/locks"
 	"poker-platform/backend/internal/models"
 	"poker-platform/backend/internal/server/game"
 	"poker-platform/backend/internal/tournament"
@@ -269,24 +272,50 @@ func HandleGetTournamentStandings(c *gin.Context, eliminationTracker *tournament
 	c.JSON(http.StatusOK, gin.H{"standings": standings})
 }
 
-// InitializeTournamentTables initializes all tables for a tournament
+// InitializeTournamentTables initializes all tables for a tournament using distributed locks
 func InitializeTournamentTables(
 	tournamentID string,
 	database *db.DB,
 	bridge *game.GameBridge,
+	lockManager *locks.LockManager,
 	onEvent func(tableID string, event pokerModels.Event),
 	broadcastFunc func(string),
 ) {
+	log.Printf("[INIT] Starting initialization for tournament %s", tournamentID)
+
+	// Acquire distributed lock with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	lockKey := fmt.Sprintf("tournament:init:%s", tournamentID)
+	log.Printf("[INIT] Attempting to acquire distributed lock: %s", lockKey)
+
+	lock, err := lockManager.AcquireLock(ctx, lockKey, 60*time.Second)
+	if err != nil {
+		log.Printf("[INIT] ✗ Failed to acquire lock for tournament %s: %v", tournamentID, err)
+		return
+	}
+	defer func() {
+		if err := lock.Release(context.Background()); err != nil {
+			log.Printf("[INIT] ⚠️  Error releasing lock for tournament %s: %v", tournamentID, err)
+		}
+	}()
+
+	log.Printf("[INIT] ✓ Acquired distributed lock for tournament %s", tournamentID)
+
 	tableInit := tournament.NewTableInitializer(database.DB)
 
 	modelTables, err := tableInit.InitializeAllTournamentTables(tournamentID)
 	if err != nil {
-		log.Printf("Error initializing tournament tables: %v", err)
+		log.Printf("[INIT] ✗ Error initializing tournament tables: %v", err)
 		return
 	}
 
+	log.Printf("[INIT] Creating %d tables for tournament %s", len(modelTables), tournamentID)
+
 	// Add tables to game bridge and start them
-	bridge.Mu.Lock()
+	// Use write lock only for adding tables
+	successCount := 0
 	for _, modelTable := range modelTables {
 		tableID := modelTable.TableID
 
@@ -308,30 +337,38 @@ func InitializeTournamentTables(
 		table := engine.NewTable(tableID, modelTable.GameType, modelTable.Config, onTimeout, eventFunc)
 
 		// Add players to the engine table
+		playerCount := 0
 		for _, player := range modelTable.Players {
 			if player != nil {
 				if err := table.AddPlayer(player.PlayerID, player.PlayerName, player.SeatNumber, player.Chips); err != nil {
-					log.Printf("Error adding player %s to table %s: %v", player.PlayerID, tableID, err)
+					log.Printf("[INIT] ✗ Error adding player %s to table %s: %v", player.PlayerID, tableID, err)
+				} else {
+					playerCount++
 				}
 			}
 		}
 
 		// Add to bridge
+		bridge.Mu.Lock()
 		bridge.Tables[tableID] = table
+		bridge.Mu.Unlock()
+
+		log.Printf("[INIT] ✓ Initialized table %s with %d players", tableID, playerCount)
+		successCount++
 
 		// Start the game
 		go func(t *engine.Table, tid string) {
 			time.Sleep(2 * time.Second)
-			log.Printf("Attempting to start game for tournament table %s", tid)
+			log.Printf("[INIT] Attempting to start game for tournament table %s", tid)
 
 			// Check current state before starting
 			state := t.GetState()
-			log.Printf("Table %s pre-start state: status=%s, players=%d", tid, state.Status, len(state.Players))
+			log.Printf("[INIT] Table %s pre-start state: status=%s, players=%d", tid, state.Status, len(state.Players))
 
 			if err := t.StartGame(); err != nil {
-				log.Printf("❌ Error starting game for table %s: %v", tid, err)
+				log.Printf("[INIT] ❌ Error starting game for table %s: %v", tid, err)
 			} else {
-				log.Printf("✓ Game started successfully for table %s", tid)
+				log.Printf("[INIT] ✓ Game started successfully for table %s", tid)
 
 				// Update database table status to playing
 				now := time.Now()
@@ -340,80 +377,145 @@ func InitializeTournamentTables(
 					"started_at": &now,
 				})
 				if result.Error != nil {
-					log.Printf("❌ Error updating database status for table %s: %v", tid, result.Error)
+					log.Printf("[INIT] ❌ Error updating database status for table %s: %v", tid, result.Error)
 				} else {
-					log.Printf("✓ Database updated: table %s status=playing (rows affected: %d)", tid, result.RowsAffected)
+					log.Printf("[INIT] ✓ Database updated: table %s status=playing (rows affected: %d)", tid, result.RowsAffected)
 				}
 
 				broadcastFunc(tid)
-				log.Printf("✓ Broadcast sent for table %s", tid)
+				log.Printf("[INIT] ✓ Broadcast sent for table %s", tid)
 			}
 		}(table, tableID)
-
-		log.Printf("Initialized tournament table %s", tableID)
 	}
-	bridge.Mu.Unlock()
 
-	log.Printf("Tournament %s: %d tables initialized and started", tournamentID, len(modelTables))
+	log.Printf("[INIT] ✓ Tournament %s: %d/%d tables initialized and started", tournamentID, successCount, len(modelTables))
 }
 
-// PauseTournamentTables pauses all tables for a tournament
-func PauseTournamentTables(tournamentID string, database *db.DB, bridge *game.GameBridge, broadcastFunc func(string)) {
+// PauseTournamentTables pauses all tables for a tournament using distributed locks
+func PauseTournamentTables(tournamentID string, database *db.DB, bridge *game.GameBridge, lockManager *locks.LockManager, broadcastFunc func(string)) {
+	log.Printf("[PAUSE] Starting pause for tournament %s", tournamentID)
+
+	// Get tables from database
 	var tables []models.Table
 	if err := database.DB.Where("tournament_id = ?", tournamentID).Find(&tables).Error; err != nil {
-		log.Printf("Error getting tournament tables: %v", err)
+		log.Printf("[PAUSE] ✗ Error getting tournament tables: %v", err)
 		return
 	}
+	log.Printf("[PAUSE] Found %d tables to pause for tournament %s", len(tables), tournamentID)
 
-	// Pause all tables while holding the lock
-	bridge.Mu.Lock()
+	// Acquire distributed lock with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	lockKey := fmt.Sprintf("tournament:pause:%s", tournamentID)
+	log.Printf("[PAUSE] Attempting to acquire distributed lock: %s", lockKey)
+
+	lock, err := lockManager.AcquireLock(ctx, lockKey, 30*time.Second)
+	if err != nil {
+		log.Printf("[PAUSE] ✗ Failed to acquire lock for tournament %s: %v", tournamentID, err)
+		return
+	}
+	defer func() {
+		if err := lock.Release(context.Background()); err != nil {
+			log.Printf("[PAUSE] ⚠️  Error releasing lock for tournament %s: %v", tournamentID, err)
+		}
+	}()
+
+	log.Printf("[PAUSE] ✓ Acquired distributed lock for tournament %s", tournamentID)
+
+	// Pause all tables while holding the distributed lock
+	// Use read lock for bridge operations to allow concurrent reads
+	successCount := 0
+	failCount := 0
 	for _, table := range tables {
-		if engineTable, exists := bridge.Tables[table.ID]; exists {
+		log.Printf("[PAUSE] Pausing table %s for tournament %s", table.ID, tournamentID)
+
+		bridge.Mu.RLock()
+		engineTable, exists := bridge.Tables[table.ID]
+		bridge.Mu.RUnlock()
+
+		if exists {
 			if err := engineTable.Pause(); err != nil {
-				log.Printf("Error pausing table %s: %v", table.ID, err)
+				log.Printf("[PAUSE] ✗ Error pausing table %s: %v", table.ID, err)
+				failCount++
 			} else {
-				log.Printf("Paused table %s for tournament %s", table.ID, tournamentID)
+				log.Printf("[PAUSE] ✓ Paused table %s", table.ID)
+				successCount++
 			}
+		} else {
+			log.Printf("[PAUSE] ⚠️  Table %s not found in bridge", table.ID)
+			failCount++
 		}
 	}
-	bridge.Mu.Unlock()
+
+	log.Printf("[PAUSE] Pause complete: %d succeeded, %d failed for tournament %s", successCount, failCount, tournamentID)
 
 	// Broadcast updated state to all tables after pausing (after releasing the lock)
+	log.Printf("[PAUSE] Broadcasting state to %d tables", len(tables))
 	for _, table := range tables {
 		broadcastFunc(table.ID)
 	}
+	log.Printf("[PAUSE] ✓ Completed pause for tournament %s", tournamentID)
 }
 
-// ResumeTournamentTables resumes all tables for a tournament
-func ResumeTournamentTables(tournamentID string, database *db.DB, bridge *game.GameBridge, broadcastFunc func(string)) {
+// ResumeTournamentTables resumes all tables for a tournament using distributed locks
+func ResumeTournamentTables(tournamentID string, database *db.DB, bridge *game.GameBridge, lockManager *locks.LockManager, broadcastFunc func(string)) {
 	log.Printf("[RESUME] Starting resume for tournament %s", tournamentID)
+
+	// Get tables from database
 	var tables []models.Table
 	if err := database.DB.Where("tournament_id = ?", tournamentID).Find(&tables).Error; err != nil {
-		log.Printf("[RESUME] Error getting tournament tables: %v", err)
+		log.Printf("[RESUME] ✗ Error getting tournament tables: %v", err)
 		return
 	}
 	log.Printf("[RESUME] Found %d tables to resume for tournament %s", len(tables), tournamentID)
 
-	log.Printf("[RESUME] Attempting to acquire lock for tournament %s", tournamentID)
+	// Acquire distributed lock with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-	// Resume all tables while holding the lock
-	bridge.Mu.Lock()
-	log.Printf("[RESUME] ✓ Acquired lock for tournament %s", tournamentID)
+	lockKey := fmt.Sprintf("tournament:resume:%s", tournamentID)
+	log.Printf("[RESUME] Attempting to acquire distributed lock: %s", lockKey)
 
+	lock, err := lockManager.AcquireLock(ctx, lockKey, 30*time.Second)
+	if err != nil {
+		log.Printf("[RESUME] ✗ Failed to acquire lock for tournament %s: %v", tournamentID, err)
+		return
+	}
+	defer func() {
+		if err := lock.Release(context.Background()); err != nil {
+			log.Printf("[RESUME] ⚠️  Error releasing lock for tournament %s: %v", tournamentID, err)
+		}
+	}()
+
+	log.Printf("[RESUME] ✓ Acquired distributed lock for tournament %s", tournamentID)
+
+	// Resume all tables while holding the distributed lock
+	// Use read lock for bridge operations to allow concurrent reads
+	successCount := 0
+	failCount := 0
 	for _, table := range tables {
 		log.Printf("[RESUME] Resuming table %s for tournament %s", table.ID, tournamentID)
-		if engineTable, exists := bridge.Tables[table.ID]; exists {
+
+		bridge.Mu.RLock()
+		engineTable, exists := bridge.Tables[table.ID]
+		bridge.Mu.RUnlock()
+
+		if exists {
 			if err := engineTable.Resume(); err != nil {
 				log.Printf("[RESUME] ✗ Error resuming table %s: %v", table.ID, err)
+				failCount++
 			} else {
 				log.Printf("[RESUME] ✓ Resumed table %s", table.ID)
+				successCount++
 			}
 		} else {
 			log.Printf("[RESUME] ✗ Table %s not found in bridge", table.ID)
+			failCount++
 		}
 	}
-	bridge.Mu.Unlock()
-	log.Printf("[RESUME] ✓ Released lock for tournament %s", tournamentID)
+
+	log.Printf("[RESUME] Resume complete: %d succeeded, %d failed for tournament %s", successCount, failCount, tournamentID)
 
 	// Broadcast updated state to all tables after resuming (after releasing the lock)
 	log.Printf("[RESUME] Broadcasting state to %d tables", len(tables))
