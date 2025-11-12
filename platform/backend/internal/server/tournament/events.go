@@ -138,9 +138,23 @@ func HandleTournamentEngineEvent(
 
 					tournamentID := *dbTable.TournamentID
 
-					// Eliminate all sitting out players
+					// Eliminate all sitting out players (check if not already eliminated)
 					for _, p := range state.Players {
 						if p != nil && (p.Status == pokerModels.StatusSittingOut || p.Chips == 0) {
+							// Check if player is already eliminated
+							var tournamentPlayer models.TournamentPlayer
+							err := database.Where("tournament_id = ? AND user_id = ?", tournamentID, p.PlayerID).First(&tournamentPlayer).Error
+							if err != nil {
+								log.Printf("[TOURNAMENT] Error checking elimination status for player %s: %v", p.PlayerID, err)
+								continue
+							}
+
+							// Skip if already eliminated
+							if tournamentPlayer.EliminatedAt != nil {
+								log.Printf("[TOURNAMENT] Player %s already eliminated, skipping", p.PlayerID)
+								continue
+							}
+
 							if err := eliminationTracker.EliminatePlayer(tournamentID, p.PlayerID); err != nil {
 								log.Printf("[TOURNAMENT] Error eliminating player %s: %v", p.PlayerID, err)
 							}
@@ -240,6 +254,20 @@ func CheckTournamentEliminations(
 	// Check each player for elimination (chips = 0)
 	for _, player := range state.Players {
 		if player != nil && player.Chips == 0 && player.Status != pokerModels.StatusSittingOut {
+			// Check if player is already eliminated
+			var tournamentPlayer models.TournamentPlayer
+			err := database.Where("tournament_id = ? AND user_id = ?", tournamentID, player.PlayerID).First(&tournamentPlayer).Error
+			if err != nil {
+				log.Printf("Error checking elimination status for player %s: %v", player.PlayerID, err)
+				continue
+			}
+
+			// Skip if already eliminated
+			if tournamentPlayer.EliminatedAt != nil {
+				log.Printf("Player %s already eliminated, skipping", player.PlayerID)
+				continue
+			}
+
 			// Player is eliminated
 			if err := eliminationTracker.EliminatePlayer(tournamentID, player.PlayerID); err != nil {
 				log.Printf("Error eliminating player %s: %v", player.PlayerID, err)

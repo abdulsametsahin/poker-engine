@@ -218,6 +218,19 @@ func (g *Game) ProcessAction(playerID string, action models.PlayerAction, amount
 
 	player.HasActedThisRound = true
 
+	// Fire playerAction event to notify clients
+	if g.onEvent != nil {
+		g.onEvent(models.Event{
+			Event:   "playerAction",
+			TableID: g.table.TableID,
+			Data: map[string]interface{}{
+				"playerId": playerID,
+				"action":   string(action),
+				"amount":   amount,
+			},
+		})
+	}
+
 	if g.isBettingRoundComplete() {
 		g.advanceToNextRound()
 	} else {
