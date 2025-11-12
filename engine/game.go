@@ -32,6 +32,10 @@ func (g *Game) StartNewHand() error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
+	if g.table == nil {
+		return fmt.Errorf("game table is nil")
+	}
+
 	g.table.Winners = nil
 	g.table.Status = models.StatusPlaying
 
@@ -189,12 +193,20 @@ func (g *Game) ProcessAction(playerID string, action models.PlayerAction, amount
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
+	if g.table == nil {
+		return fmt.Errorf("game table is nil")
+	}
+
 	if g.table.Status == models.StatusPaused {
 		return fmt.Errorf("game is paused, actions not allowed")
 	}
 
 	if g.table.Status != models.StatusPlaying {
 		return fmt.Errorf("hand is not in progress")
+	}
+
+	if g.table.CurrentHand == nil {
+		return fmt.Errorf("no active hand")
 	}
 
 	player := findPlayerByID(g.table.Players, playerID)
@@ -442,6 +454,10 @@ func (g *Game) isBettingRoundComplete() bool {
 }
 
 func (g *Game) startActionTimer() {
+	if g.table == nil || g.table.CurrentHand == nil {
+		return
+	}
+	
 	if g.table.Config.ActionTimeout <= 0 {
 		return
 	}
@@ -493,6 +509,10 @@ func (g *Game) stopActionTimer() {
 func (g *Game) HandleTimeout(playerID string) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+
+	if g.table == nil || g.table.CurrentHand == nil {
+		return nil // No active game, ignore timeout
+	}
 
 	// Check if game is in progress
 	if g.table.Status != models.StatusPlaying {
