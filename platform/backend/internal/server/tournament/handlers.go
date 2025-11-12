@@ -393,9 +393,9 @@ func ResumeTournamentTables(tournamentID string, database *db.DB, bridge *game.G
 		return
 	}
 	log.Printf("[RESUME] Found %d tables to resume for tournament %s", len(tables), tournamentID)
-	
+
 	log.Printf("[RESUME] Attempting to acquire lock for tournament %s", tournamentID)
-	
+
 	// Resume all tables while holding the lock
 	bridge.Mu.Lock()
 	log.Printf("[RESUME] ✓ Acquired lock for tournament %s", tournamentID)
@@ -421,7 +421,7 @@ func ResumeTournamentTables(tournamentID string, database *db.DB, bridge *game.G
 		broadcastFunc(table.ID)
 	}
 	log.Printf("[RESUME] ✓ Completed resume for tournament %s", tournamentID)
-}// ReinitializeTournamentTables recreates tables after consolidation
+} // ReinitializeTournamentTables recreates tables after consolidation
 func ReinitializeTournamentTables(
 	tournamentID string,
 	database *db.DB,
