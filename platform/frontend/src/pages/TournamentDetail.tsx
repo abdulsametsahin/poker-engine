@@ -111,6 +111,8 @@ export const TournamentDetail: React.FC = () => {
   const [isRegistered, setIsRegistered] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [blindCountdown, setBlindCountdown] = useState<number | null>(null);
+  const [isPausing, setIsPausing] = useState(false);
+  const [isResuming, setIsResuming] = useState(false);
 
   const fetchTournamentData = useCallback(async () => {
     if (!id) return;
@@ -343,24 +345,30 @@ export const TournamentDetail: React.FC = () => {
       return;
     }
 
+    setIsPausing(true);
     try {
       await tournamentAPI.pauseTournament(id);
       showSuccess('Tournament paused');
       fetchTournamentData();
     } catch (error: any) {
       showError(error.response?.data?.error || 'Failed to pause tournament');
+    } finally {
+      setIsPausing(false);
     }
   };
 
   const handleResumeTournament = async () => {
     if (!id) return;
 
+    setIsResuming(true);
     try {
       await tournamentAPI.resumeTournament(id);
       showSuccess('Tournament resumed');
       fetchTournamentData();
     } catch (error: any) {
       showError(error.response?.data?.error || 'Failed to resume tournament');
+    } finally {
+      setIsResuming(false);
     }
   };
 
@@ -509,6 +517,7 @@ export const TournamentDetail: React.FC = () => {
                   variant="warning"
                   startIcon={<Pause />}
                   onClick={handlePauseTournament}
+                  loading={isPausing}
                 >
                   Pause Tournament
                 </Button>
@@ -518,6 +527,7 @@ export const TournamentDetail: React.FC = () => {
                   variant="success"
                   startIcon={<PlayArrow />}
                   onClick={handleResumeTournament}
+                  loading={isResuming}
                 >
                   Resume Tournament
                 </Button>

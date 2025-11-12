@@ -9,7 +9,7 @@ import { PokerTable } from '../components/game/PokerTable';
 import { GameSidebar } from '../components/game/GameSidebar';
 import { ConsolePanel } from '../components/game/ConsolePanel';
 import { TableSwitcher } from '../components/game/TableSwitcher';
-import { WinnerDisplay, HandCompleteDisplay } from '../components/modals';
+import { WinnerDisplay, HandCompleteDisplay, TournamentPausedModal } from '../components/modals';
 import { Button } from '../components/common/Button';
 import { Badge } from '../components/common/Badge';
 import { COLORS, RADIUS, SPACING, GAME } from '../constants';
@@ -293,11 +293,15 @@ export const GameView: React.FC = () => {
     const handleTournamentPaused = (message: WSMessage) => {
       addConsoleLog('TOURNAMENT', 'Tournament paused - Game on hold', 'warning');
       showWarning('Tournament has been paused. Game is on hold.');
+      // Update table state to paused
+      setTableState(prev => prev ? { ...prev, status: 'paused' } : null);
     };
 
     const handleTournamentResumed = (message: WSMessage) => {
       addConsoleLog('TOURNAMENT', 'Tournament resumed - Game continuing', 'success');
       showSuccess('Tournament has been resumed. Game continues!');
+      // Update table state back to playing
+      setTableState(prev => prev ? { ...prev, status: 'playing' } : null);
     };
 
     addMessageHandler('table_state', handleTableState);
@@ -701,6 +705,9 @@ export const GameView: React.FC = () => {
           onReturnToLobby={handleReturnToLobby}
         />
       )}
+
+      {/* Tournament Paused Modal */}
+      <TournamentPausedModal open={tableState?.status === 'paused'} />
 
       {/* Leave game confirmation dialog */}
       {/* Console Dialog */}

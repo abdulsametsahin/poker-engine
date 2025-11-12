@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Box, LinearProgress, Typography } from '@mui/material';
 
 interface ActionTimerProps {
-  deadline: string | Date | number; // ISO string, Date object, or timestamp
+  deadline?: string | Date | number | null; // ISO string, Date object, or timestamp
   totalTime?: number; // Total time in seconds (default: 30)
 }
 
@@ -15,6 +15,15 @@ const ActionTimer: React.FC<ActionTimerProps> = ({ deadline, totalTime = 30 }) =
 
   // Parse and update deadline when it changes
   useEffect(() => {
+    // If no deadline provided, reset to 0
+    if (!deadline) {
+      deadlineTimeRef.current = 0;
+      startTimeRef.current = 0;
+      setTimeLeft(0);
+      setPercentage(0);
+      return;
+    }
+
     let deadlineTime: number;
 
     if (typeof deadline === 'string') {
@@ -82,6 +91,9 @@ const ActionTimer: React.FC<ActionTimerProps> = ({ deadline, totalTime = 30 }) =
     return '#ef4444';
   };
 
+  // Check if timer is paused (no deadline)
+  const isPaused = !deadline || deadlineTimeRef.current === 0;
+
   return (
     <Box sx={{ width: '100%' }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
@@ -91,9 +103,9 @@ const ActionTimer: React.FC<ActionTimerProps> = ({ deadline, totalTime = 30 }) =
         <Typography
           variant="caption"
           fontWeight="bold"
-          sx={{ color: getColor(), fontSize: '11px' }}
+          sx={{ color: isPaused ? '#9ca3af' : getColor(), fontSize: '11px' }}
         >
-          {timeLeft}s
+          {isPaused ? 'PAUSED' : `${timeLeft}s`}
         </Typography>
       </Box>
       <Box
@@ -107,7 +119,7 @@ const ActionTimer: React.FC<ActionTimerProps> = ({ deadline, totalTime = 30 }) =
       >
         <Box
           sx={{
-            width: `${percentage}%`,
+            width: isPaused ? '0%' : `${percentage}%`,
             height: '100%',
             bgcolor: getColor(),
             transition: 'width 0.1s linear',
