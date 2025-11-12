@@ -60,16 +60,22 @@ Check if all services are running:
 docker compose ps
 ```
 
-You should see 3 services running:
+You should see multiple services running:
 - `poker-db` (MySQL)
 - `poker-backend` (Go API)
 - `poker-frontend` (React + Nginx)
+- `poker-engine-dbgate` (Database Management)
+- `poker-loki` (Log Aggregation)
+- `poker-promtail` (Log Collector)
+- `poker-grafana` (Monitoring)
 
 ### 5. Access the Application
 
 - **Frontend**: http://localhost
 - **Backend API**: http://localhost:8080/api
 - **WebSocket**: ws://localhost:8080/ws
+- **DbGate** (Database Management): http://localhost:10080
+- **Grafana** (Monitoring): http://localhost:3000
 
 ## Production Deployment on Digital Ocean
 
@@ -164,6 +170,7 @@ docker compose logs -f
 docker compose logs -f backend
 docker compose logs -f frontend
 docker compose logs -f db
+docker compose logs -f dbgate
 ```
 
 ### Restart Services
