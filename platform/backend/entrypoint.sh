@@ -3,8 +3,7 @@
 # ============================================
 # Backend Container Entrypoint Script
 # ============================================
-# This script runs database migrations before
-# starting the poker server application
+# Migrations run automatically on startup
 # ============================================
 
 set -e
@@ -14,12 +13,9 @@ echo "  Poker Platform - Backend Startup"
 echo "============================================"
 echo ""
 
-# Run database migrations
-echo "Running database migrations..."
-/root/scripts/migrate.sh up
-
-echo ""
 echo "Starting poker server..."
+echo "(Migrations will run automatically)"
+echo ""
 
 # Start the poker server
 exec ./poker-server
