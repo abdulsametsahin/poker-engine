@@ -43,40 +43,69 @@ print_info() {
     echo -e "${BLUE}ℹ️  $1${NC}"
 }
 
-# Check if MySQL is accessible with retry logic
-check_mysql_connection() {
-    local max_attempts=30
+# Wait for MySQL server to be ready
+wait_for_mysql() {
+    local max_attempts=60
     local attempt=1
-    local wait_time=2
 
-    print_info "Waiting for MySQL database to be ready..."
+    print_info "Waiting for MySQL server to be ready..."
     echo "Host: $DB_HOST:$DB_PORT"
-    echo "User: $DB_USER"
-    echo "Database: $DB_NAME"
-    echo ""
 
     while [ $attempt -le $max_attempts ]; do
         if mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" -e "SELECT 1" &>/dev/null; then
-            print_success "Successfully connected to MySQL database"
+            print_success "MySQL server is ready"
             return 0
         fi
 
-        print_warning "Connection attempt $attempt/$max_attempts failed. Retrying in ${wait_time}s..."
-        sleep $wait_time
-
-        # Increase wait time exponentially (up to 10 seconds)
-        if [ $wait_time -lt 10 ]; then
-            wait_time=$((wait_time + 1))
+        if [ $attempt -eq 1 ] || [ $((attempt % 5)) -eq 0 ]; then
+            print_info "Attempt $attempt/$max_attempts - waiting..."
         fi
 
+        sleep 2
         attempt=$((attempt + 1))
     done
 
-    print_error "Cannot connect to MySQL database after $max_attempts attempts"
-    echo "Host: $DB_HOST:$DB_PORT"
-    echo "User: $DB_USER"
-    echo "Database: $DB_NAME"
+    print_error "MySQL server not ready after $max_attempts attempts"
     exit 1
+}
+
+# Ensure database exists
+ensure_database() {
+    print_info "Ensuring database '$DB_NAME' exists..."
+
+    if mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" \
+        -e "CREATE DATABASE IF NOT EXISTS \`$DB_NAME\`;" &>/dev/null; then
+        print_success "Database '$DB_NAME' is ready"
+    else
+        print_error "Failed to create database '$DB_NAME'"
+        exit 1
+    fi
+}
+
+# Ensure schema_migrations table exists
+ensure_migrations_table() {
+    print_info "Ensuring schema_migrations table exists..."
+
+    mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" <<-EOF &>/dev/null
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version INT NOT NULL PRIMARY KEY,
+    applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+EOF
+
+    if [ $? -eq 0 ]; then
+        print_success "Schema migrations table is ready"
+    else
+        print_error "Failed to create schema_migrations table"
+        exit 1
+    fi
+}
+
+# Initialize database (wait, create db, create migrations table)
+init_database() {
+    wait_for_mysql
+    ensure_database
+    ensure_migrations_table
 }
 
 # Get current migration version
@@ -289,15 +318,15 @@ EOF
 # Main command dispatcher
 case "${1:-}" in
     up)
-        check_mysql_connection
+        init_database
         migrate_up "${2:-999}"
         ;;
     down)
-        check_mysql_connection
+        init_database
         migrate_down "${2:-1}"
         ;;
     status)
-        check_mysql_connection
+        init_database
         show_status
         ;;
     create)
