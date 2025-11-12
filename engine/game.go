@@ -7,18 +7,21 @@ import (
 	"time"
 )
 
+// Game manages a poker game's state and lifecycle.
+// It is thread-safe and uses a mutex to protect concurrent access to game state.
 type Game struct {
 	table           *models.Table
 	potCalculator   *PotCalculator
 	actionTimer     *time.Timer
 	onTimeout       func(string)
 	onEvent         func(models.Event)
-	mu              sync.Mutex
+	mu              sync.Mutex     // Protects all game state modifications
 	pausedAt        *time.Time
 	pauseDuration   time.Duration
 	timerRemaining  time.Duration
 }
 
+// NewGame creates a new Game instance with the given table, timeout handler, and event handler.
 func NewGame(table *models.Table, onTimeout func(string), onEvent func(models.Event)) *Game {
 	return &Game{
 		table:         table,
@@ -31,6 +34,10 @@ func NewGame(table *models.Table, onTimeout func(string), onEvent func(models.Ev
 func (g *Game) StartNewHand() error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+
+	if g.table == nil {
+		return fmt.Errorf("game table is nil")
+	}
 
 	g.table.Winners = nil
 	g.table.Status = models.StatusPlaying
@@ -189,12 +196,20 @@ func (g *Game) ProcessAction(playerID string, action models.PlayerAction, amount
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
+	if g.table == nil {
+		return fmt.Errorf("game table is nil")
+	}
+
 	if g.table.Status == models.StatusPaused {
 		return fmt.Errorf("game is paused, actions not allowed")
 	}
 
 	if g.table.Status != models.StatusPlaying {
 		return fmt.Errorf("hand is not in progress")
+	}
+
+	if g.table.CurrentHand == nil {
+		return fmt.Errorf("no active hand")
 	}
 
 	player := findPlayerByID(g.table.Players, playerID)
@@ -442,6 +457,10 @@ func (g *Game) isBettingRoundComplete() bool {
 }
 
 func (g *Game) startActionTimer() {
+	if g.table == nil || g.table.CurrentHand == nil {
+		return
+	}
+	
 	if g.table.Config.ActionTimeout <= 0 {
 		return
 	}
@@ -493,6 +512,10 @@ func (g *Game) stopActionTimer() {
 func (g *Game) HandleTimeout(playerID string) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+
+	if g.table == nil || g.table.CurrentHand == nil {
+		return nil // No active game, ignore timeout
+	}
 
 	// Check if game is in progress
 	if g.table.Status != models.StatusPlaying {

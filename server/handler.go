@@ -50,6 +50,14 @@ func (h *CommandHandler) handleCreateTable(data map[string]interface{}) models.R
 	tableID := getString(data, "tableId")
 	gameTypeStr := getString(data, "gameType")
 
+	// Validate required fields
+	if tableID == "" {
+		return models.Response{Success: false, Error: "tableId is required"}
+	}
+	if gameTypeStr != "tournament" && gameTypeStr != "cash" {
+		return models.Response{Success: false, Error: "gameType must be 'tournament' or 'cash'"}
+	}
+
 	var gameType models.GameType
 	if gameTypeStr == "tournament" {
 		gameType = models.GameTypeTournament
@@ -105,6 +113,9 @@ func (h *CommandHandler) handleCreateTable(data map[string]interface{}) models.R
 
 func (h *CommandHandler) handleDestroyTable(data map[string]interface{}) models.Response {
 	tableID := getString(data, "tableId")
+	if tableID == "" {
+		return models.Response{Success: false, Error: "tableId is required"}
+	}
 	err := h.tableManager.DestroyTable(tableID)
 	if err != nil {
 		return models.Response{Success: false, Error: err.Error()}
@@ -114,6 +125,9 @@ func (h *CommandHandler) handleDestroyTable(data map[string]interface{}) models.
 
 func (h *CommandHandler) handleGetTable(data map[string]interface{}) models.Response {
 	tableID := getString(data, "tableId")
+	if tableID == "" {
+		return models.Response{Success: false, Error: "tableId is required"}
+	}
 	table, err := h.tableManager.GetTable(tableID)
 	if err != nil {
 		return models.Response{Success: false, Error: err.Error()}
@@ -132,6 +146,17 @@ func (h *CommandHandler) handlePlayerJoin(data map[string]interface{}) models.Re
 	playerName := getString(data, "playerName")
 	seatNumber := getInt(data, "seatNumber")
 	buyIn := getInt(data, "buyIn")
+
+	// Validate required fields
+	if tableID == "" {
+		return models.Response{Success: false, Error: "tableId is required"}
+	}
+	if playerID == "" {
+		return models.Response{Success: false, Error: "playerId is required"}
+	}
+	if playerName == "" {
+		return models.Response{Success: false, Error: "playerName is required"}
+	}
 
 	// Auto-assign seat if seatNumber is not specified (< 0) or is invalid
 	table, err := h.tableManager.GetTable(tableID)
@@ -164,6 +189,14 @@ func (h *CommandHandler) handlePlayerJoin(data map[string]interface{}) models.Re
 func (h *CommandHandler) handlePlayerLeave(data map[string]interface{}) models.Response {
 	tableID := getString(data, "tableId")
 	playerID := getString(data, "playerId")
+	
+	if tableID == "" {
+		return models.Response{Success: false, Error: "tableId is required"}
+	}
+	if playerID == "" {
+		return models.Response{Success: false, Error: "playerId is required"}
+	}
+	
 	err := h.tableManager.RemovePlayer(tableID, playerID)
 	if err != nil {
 		return models.Response{Success: false, Error: err.Error()}
@@ -174,6 +207,14 @@ func (h *CommandHandler) handlePlayerLeave(data map[string]interface{}) models.R
 func (h *CommandHandler) handlePlayerSitOut(data map[string]interface{}) models.Response {
 	tableID := getString(data, "tableId")
 	playerID := getString(data, "playerId")
+	
+	if tableID == "" {
+		return models.Response{Success: false, Error: "tableId is required"}
+	}
+	if playerID == "" {
+		return models.Response{Success: false, Error: "playerId is required"}
+	}
+	
 	err := h.tableManager.SitOut(tableID, playerID)
 	if err != nil {
 		return models.Response{Success: false, Error: err.Error()}
@@ -184,6 +225,14 @@ func (h *CommandHandler) handlePlayerSitOut(data map[string]interface{}) models.
 func (h *CommandHandler) handlePlayerSitIn(data map[string]interface{}) models.Response {
 	tableID := getString(data, "tableId")
 	playerID := getString(data, "playerId")
+	
+	if tableID == "" {
+		return models.Response{Success: false, Error: "tableId is required"}
+	}
+	if playerID == "" {
+		return models.Response{Success: false, Error: "playerId is required"}
+	}
+	
 	err := h.tableManager.SitIn(tableID, playerID)
 	if err != nil {
 		return models.Response{Success: false, Error: err.Error()}
@@ -195,6 +244,17 @@ func (h *CommandHandler) handleAddChips(data map[string]interface{}) models.Resp
 	tableID := getString(data, "tableId")
 	playerID := getString(data, "playerId")
 	amount := getInt(data, "amount")
+	
+	if tableID == "" {
+		return models.Response{Success: false, Error: "tableId is required"}
+	}
+	if playerID == "" {
+		return models.Response{Success: false, Error: "playerId is required"}
+	}
+	if amount <= 0 {
+		return models.Response{Success: false, Error: "amount must be positive"}
+	}
+	
 	err := h.tableManager.AddChips(tableID, playerID, amount)
 	if err != nil {
 		return models.Response{Success: false, Error: err.Error()}
@@ -204,6 +264,11 @@ func (h *CommandHandler) handleAddChips(data map[string]interface{}) models.Resp
 
 func (h *CommandHandler) handleGameStart(data map[string]interface{}) models.Response {
 	tableID := getString(data, "tableId")
+	
+	if tableID == "" {
+		return models.Response{Success: false, Error: "tableId is required"}
+	}
+	
 	err := h.tableManager.StartGame(tableID)
 	if err != nil {
 		return models.Response{Success: false, Error: err.Error()}
@@ -217,6 +282,17 @@ func (h *CommandHandler) handleGameAction(data map[string]interface{}) models.Re
 	actionStr := getString(data, "action")
 	amount := getInt(data, "amount")
 
+	// Validate required fields
+	if tableID == "" {
+		return models.Response{Success: false, Error: "tableId is required"}
+	}
+	if playerID == "" {
+		return models.Response{Success: false, Error: "playerId is required"}
+	}
+	if actionStr == "" {
+		return models.Response{Success: false, Error: "action is required"}
+	}
+
 	var action models.PlayerAction
 	switch actionStr {
 	case "fold":
@@ -225,6 +301,9 @@ func (h *CommandHandler) handleGameAction(data map[string]interface{}) models.Re
 		action = models.ActionCall
 	case "raise":
 		action = models.ActionRaise
+		if amount <= 0 {
+			return models.Response{Success: false, Error: "raise amount must be positive"}
+		}
 	case "check":
 		action = models.ActionCheck
 	case "allin":
@@ -244,6 +323,11 @@ func (h *CommandHandler) handleGameAction(data map[string]interface{}) models.Re
 
 func (h *CommandHandler) handleDealNewHand(data map[string]interface{}) models.Response {
 	tableID := getString(data, "tableId")
+	
+	if tableID == "" {
+		return models.Response{Success: false, Error: "tableId is required"}
+	}
+	
 	err := h.tableManager.DealNewHand(tableID)
 	if err != nil {
 		return models.Response{Success: false, Error: err.Error()}
