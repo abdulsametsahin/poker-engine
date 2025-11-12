@@ -56,8 +56,8 @@ export const PlayerSeat: React.FC<PlayerSeatProps> = memo(({
   return (
     <Box
       sx={{
-        width: 90,
-        height: 60,
+        width: { xs: 70, sm: 80, md: 90, lg: 100 },
+        height: { xs: 50, sm: 55, md: 60, lg: 65 },
         position: 'relative',
         transition: TRANSITIONS.normal,
         opacity: player.folded ? 0.5 : 1,
