@@ -689,3 +689,10 @@ func (g *Game) Resume() error {
 
 	return nil
 }
+
+// UpdateStatus updates the game status (for external control, e.g., tournament completion)
+func (g *Game) UpdateStatus(status models.TableStatus) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.table.Status = status
+}

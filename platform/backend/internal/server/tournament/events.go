@@ -531,6 +531,31 @@ func HandleTournamentComplete(
 	bridge *game.GameBridge,
 	eliminationTracker *tournament.EliminationTracker,
 ) {
+	// Get all tables for this tournament
+	var tables []models.Table
+	if err := database.Where("tournament_id = ?", tournamentID).Find(&tables).Error; err == nil {
+		// Update engine status for each table and broadcast final state
+		for _, table := range tables {
+			bridge.Mu.RLock()
+			engineTable, exists := bridge.Tables[table.ID]
+			bridge.Mu.RUnlock()
+
+			if exists {
+				// Update engine's game status to completed/waiting
+				state := engineTable.GetState()
+				if state.Status == pokerModels.StatusHandComplete || state.Status == pokerModels.StatusPlaying {
+					// Set status to waiting (game is over for this table)
+					engineTable.UpdateStatus(pokerModels.StatusWaiting)
+					log.Printf("[TOURNAMENT] Updated table %s engine status to waiting (tournament complete)", table.ID)
+
+					// Broadcast final table state
+					game.BroadcastTableState(bridge, table.ID)
+					log.Printf("[TOURNAMENT] Broadcasted final table state for table %s", table.ID)
+				}
+			}
+		}
+	}
+
 	// Get final standings
 	standings, _ := eliminationTracker.GetTournamentStandings(tournamentID)
 
