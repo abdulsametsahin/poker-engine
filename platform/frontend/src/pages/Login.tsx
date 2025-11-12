@@ -26,10 +26,10 @@ export const Login: React.FC = () => {
   });
 
   const [registerData, setRegisterData] = useState({
-    username: '',
-    email: '',
-    password: '',
-    confirmPassword: '',
+    username: 'test1',
+    email: 'test1@example.com',
+    password: '1q2w3e++',
+    confirmPassword: '1q2w3e++',
   });
 
   const passwordStrength = getPasswordStrength(registerData.password);

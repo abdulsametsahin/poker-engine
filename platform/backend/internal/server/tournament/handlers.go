@@ -172,10 +172,11 @@ func HandleStartTournament(
 		return
 	}
 
-	// Initialize tournament tables in game engine
-	go initFunc(tournamentID)
+	// Note: Tournament tables are initialized via the onTournamentStart callback
+	// which is triggered by ForceStartTournament -> StartTournament
+	// No need to call initFunc here as it would cause duplicate initialization
 
-	// Broadcast tournament started
+	// Broadcast tournament started (callback also does this, but this ensures immediate response)
 	go broadcastFunc(tournamentID)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Tournament started"})
@@ -213,8 +214,11 @@ func HandleResumeTournament(
 	resumeTablesFunc func(string),
 	broadcastFunc func(string),
 ) {
+	// log
 	tournamentID := c.Param("id")
 	userID := c.GetString("user_id")
+
+	log.Printf("Client %s resuming tournament %s", userID, tournamentID)
 
 	// Resume tournament in database
 	if err := tournamentService.ResumeTournament(tournamentID, userID); err != nil {
@@ -227,6 +231,8 @@ func HandleResumeTournament(
 
 	// Broadcast tournament resumed
 	go broadcastFunc(tournamentID)
+
+	log.Printf("Tournament %s resumed by client %s", tournamentID, userID)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Tournament resumed"})
 }
@@ -359,9 +365,8 @@ func PauseTournamentTables(tournamentID string, database *db.DB, bridge *game.Ga
 		return
 	}
 
+	// Pause all tables while holding the lock
 	bridge.Mu.Lock()
-	defer bridge.Mu.Unlock()
-
 	for _, table := range tables {
 		if engineTable, exists := bridge.Tables[table.ID]; exists {
 			if err := engineTable.Pause(); err != nil {
@@ -371,8 +376,9 @@ func PauseTournamentTables(tournamentID string, database *db.DB, bridge *game.Ga
 			}
 		}
 	}
+	bridge.Mu.Unlock()
 
-	// Broadcast updated state to all tables after pausing
+	// Broadcast updated state to all tables after pausing (after releasing the lock)
 	for _, table := range tables {
 		broadcastFunc(table.ID)
 	}
@@ -380,32 +386,42 @@ func PauseTournamentTables(tournamentID string, database *db.DB, bridge *game.Ga
 
 // ResumeTournamentTables resumes all tables for a tournament
 func ResumeTournamentTables(tournamentID string, database *db.DB, bridge *game.GameBridge, broadcastFunc func(string)) {
+	log.Printf("[RESUME] Starting resume for tournament %s", tournamentID)
 	var tables []models.Table
 	if err := database.DB.Where("tournament_id = ?", tournamentID).Find(&tables).Error; err != nil {
-		log.Printf("Error getting tournament tables: %v", err)
+		log.Printf("[RESUME] Error getting tournament tables: %v", err)
 		return
 	}
-
+	log.Printf("[RESUME] Found %d tables to resume for tournament %s", len(tables), tournamentID)
+	
+	log.Printf("[RESUME] Attempting to acquire lock for tournament %s", tournamentID)
+	
+	// Resume all tables while holding the lock
 	bridge.Mu.Lock()
-	defer bridge.Mu.Unlock()
+	log.Printf("[RESUME] ✓ Acquired lock for tournament %s", tournamentID)
 
 	for _, table := range tables {
+		log.Printf("[RESUME] Resuming table %s for tournament %s", table.ID, tournamentID)
 		if engineTable, exists := bridge.Tables[table.ID]; exists {
 			if err := engineTable.Resume(); err != nil {
-				log.Printf("Error resuming table %s: %v", table.ID, err)
+				log.Printf("[RESUME] ✗ Error resuming table %s: %v", table.ID, err)
 			} else {
-				log.Printf("Resumed table %s for tournament %s", table.ID, tournamentID)
+				log.Printf("[RESUME] ✓ Resumed table %s", table.ID)
 			}
+		} else {
+			log.Printf("[RESUME] ✗ Table %s not found in bridge", table.ID)
 		}
 	}
+	bridge.Mu.Unlock()
+	log.Printf("[RESUME] ✓ Released lock for tournament %s", tournamentID)
 
-	// Broadcast updated state to all tables after resuming
+	// Broadcast updated state to all tables after resuming (after releasing the lock)
+	log.Printf("[RESUME] Broadcasting state to %d tables", len(tables))
 	for _, table := range tables {
 		broadcastFunc(table.ID)
 	}
-}
-
-// ReinitializeTournamentTables recreates tables after consolidation
+	log.Printf("[RESUME] ✓ Completed resume for tournament %s", tournamentID)
+}// ReinitializeTournamentTables recreates tables after consolidation
 func ReinitializeTournamentTables(
 	tournamentID string,
 	database *db.DB,

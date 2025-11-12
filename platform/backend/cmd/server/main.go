@@ -264,10 +264,13 @@ func sendMatchFoundWrapper(userID, tableID, gameMode string) {
 func handleWSMessageWrapper(c *websocket.Client, msg websocket.WSMessage) {
 	switch msg.Type {
 	case "subscribe_table":
+		// log
+		log.Printf("Client %s subscribing to table", c.UserID)
 		payload := msg.Payload.(map[string]interface{})
 		tableID := payload["table_id"].(string)
 		c.TableID = tableID
 		websocket.SendTableState(c, tableID, getTableFunc, game.SumSidePots)
+		log.Printf("Sent table state to client %s for table %s", c.UserID, tableID)
 
 	case "game_action":
 		payload := msg.Payload.(map[string]interface{})
