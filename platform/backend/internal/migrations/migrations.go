@@ -10,11 +10,19 @@ import (
 	"strings"
 
 	_ "github.com/go-sql-driver/mysql" // Import MySQL driver
-	"poker-platform/backend/internal/db"
 )
 
+// Config holds database connection configuration for migrations
+type Config struct {
+	Host     string
+	Port     string
+	User     string
+	Password string
+	DBName   string
+}
+
 // RunMigrations executes all pending database migrations
-func RunMigrations(cfg db.Config) error {
+func RunMigrations(cfg Config) error {
 	// Connect to database using standard SQL driver for raw SQL execution
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true&multiStatements=true",
 		cfg.User,
