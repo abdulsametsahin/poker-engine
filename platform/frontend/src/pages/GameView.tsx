@@ -39,7 +39,6 @@ export const GameView: React.FC = () => {
   const [showHandComplete, setShowHandComplete] = useState(false);
   const [showGameComplete, setShowGameComplete] = useState(false);
   const [gameMode, setGameMode] = useState<string>('heads_up');
-  const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [consoleLogs, setConsoleLogs] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>(() => {
@@ -328,10 +327,6 @@ export const GameView: React.FC = () => {
     navigate('/lobby');
   }, [navigate]);
 
-  const handleLeaveGame = () => {
-    navigate('/lobby');
-  };
-
   return (
     <Box
       sx={{
@@ -401,7 +396,7 @@ export const GameView: React.FC = () => {
       >
         <Stack direction="row" spacing={2} alignItems="center">
           <IconButton
-            onClick={() => setLeaveDialogOpen(true)}
+            onClick={() => navigate('/lobby')}
             sx={{
               color: COLORS.text.secondary,
               '&:hover': { color: COLORS.text.primary },
@@ -440,7 +435,7 @@ export const GameView: React.FC = () => {
           </IconButton>
 
           <IconButton
-            onClick={() => setLeaveDialogOpen(true)}
+            onClick={() => navigate('/lobby')}
             sx={{
               color: COLORS.danger.main,
               '&:hover': {
@@ -725,34 +720,6 @@ export const GameView: React.FC = () => {
           </Button>
           <Button variant="primary" onClick={() => setConsoleOpen(false)}>
             Close
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Leave Game Dialog */}
-      <Dialog
-        open={leaveDialogOpen}
-        onClose={() => setLeaveDialogOpen(false)}
-        PaperProps={{
-          sx: {
-            background: COLORS.background.paper,
-            borderRadius: RADIUS.md,
-            border: `1px solid ${COLORS.border.main}`,
-          },
-        }}
-      >
-        <DialogTitle sx={{ color: COLORS.text.primary }}>Leave Game?</DialogTitle>
-        <DialogContent>
-          <Box sx={{ color: COLORS.text.secondary }}>
-            Are you sure you want to leave this game? You will forfeit your chips if the game is in progress.
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button variant="ghost" onClick={() => setLeaveDialogOpen(false)}>
-            Cancel
-          </Button>
-          <Button variant="danger" onClick={handleLeaveGame}>
-            Leave Game
           </Button>
         </DialogActions>
       </Dialog>
