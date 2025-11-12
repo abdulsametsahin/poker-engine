@@ -6,6 +6,7 @@ import (
 
 	"poker-platform/backend/internal/db"
 	"poker-platform/backend/internal/models"
+	redisClient "poker-platform/backend/internal/redis"
 	"poker-platform/backend/internal/server/config"
 	"poker-platform/backend/internal/server/events"
 	"poker-platform/backend/internal/server/game"
@@ -38,12 +39,23 @@ func main() {
 		DBName:   config.GetEnv("DB_NAME", "poker_platform"),
 	}
 
+	// Initialize Redis configuration
+	redisConfig := redisClient.Config{
+		Host:     config.GetEnv("REDIS_HOST", "localhost"),
+		Port:     config.GetEnv("REDIS_PORT", "6379"),
+		Password: config.GetEnv("REDIS_PASSWORD", ""),
+		DB:       0,
+	}
+
 	// Initialize all services
 	var err error
-	appConfig, err = config.InitializeServices(dbConfig, config.GetEnv("JWT_SECRET", "secret"))
+	appConfig, err = config.InitializeServices(dbConfig, redisConfig, config.GetEnv("JWT_SECRET", "secret"))
 	if err != nil {
 		log.Fatal("Failed to initialize services:", err)
 	}
+
+	// Ensure cleanup on exit
+	defer appConfig.Cleanup()
 
 	// Get underlying SQL DB for cleanup
 	sqlDB, err := appConfig.Database.DB.DB()
@@ -372,15 +384,15 @@ func initializeTournamentTablesWrapper(tournamentID string) {
 	onEvent := func(tableID string, event pokerModels.Event) {
 		handleEvent(tableID, event, pokerModels.GameTypeTournament)
 	}
-	serverTournament.InitializeTournamentTables(tournamentID, appConfig.Database, bridge, onEvent, broadcastTableStateWrapper)
+	serverTournament.InitializeTournamentTables(tournamentID, appConfig.Database, bridge, appConfig.LockManager, onEvent, broadcastTableStateWrapper)
 }
 
 func pauseTournamentTablesWrapper(tournamentID string) {
-	serverTournament.PauseTournamentTables(tournamentID, appConfig.Database, bridge, broadcastTableStateWrapper)
+	serverTournament.PauseTournamentTables(tournamentID, appConfig.Database, bridge, appConfig.LockManager, broadcastTableStateWrapper)
 }
 
 func resumeTournamentTablesWrapper(tournamentID string) {
-	serverTournament.ResumeTournamentTables(tournamentID, appConfig.Database, bridge, broadcastTableStateWrapper)
+	serverTournament.ResumeTournamentTables(tournamentID, appConfig.Database, bridge, appConfig.LockManager, broadcastTableStateWrapper)
 }
 
 func reinitializeTournamentTablesWrapper(tournamentID string) {

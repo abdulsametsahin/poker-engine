@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"log"
 	"os"
 	"time"
@@ -8,8 +9,10 @@ import (
 	"poker-platform/backend/internal/auth"
 	"poker-platform/backend/internal/currency"
 	"poker-platform/backend/internal/db"
+	"poker-platform/backend/internal/locks"
 	"poker-platform/backend/internal/models"
 	"poker-platform/backend/internal/recovery"
+	redisClient "poker-platform/backend/internal/redis"
 	"poker-platform/backend/internal/tournament"
 
 	"poker-engine/engine"
@@ -19,6 +22,8 @@ import (
 // AppConfig holds all the service dependencies
 type AppConfig struct {
 	Database            *db.DB
+	Redis               *redisClient.Client
+	LockManager         *locks.LockManager
 	AuthService         *auth.Service
 	CurrencyService     *currency.Service
 	TournamentService   *tournament.Service
@@ -38,10 +43,27 @@ func GetEnv(key, fallback string) string {
 }
 
 // InitializeServices creates and initializes all services
-func InitializeServices(dbConfig db.Config, jwtSecret string) (*AppConfig, error) {
+func InitializeServices(dbConfig db.Config, redisConfig redisClient.Config, jwtSecret string) (*AppConfig, error) {
 	database, err := db.New(dbConfig)
 	if err != nil {
 		return nil, err
+	}
+
+	redis, err := redisClient.New(redisConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	// Initialize lock manager with Redis client
+	lockManager := locks.NewLockManager(redis.Client)
+
+	// Clean up any orphaned locks from previous crashes on startup
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if cleaned, err := lockManager.CleanupOrphanedLocks(ctx); err != nil {
+		log.Printf("⚠️  Warning: Failed to cleanup orphaned locks on startup: %v", err)
+	} else if cleaned > 0 {
+		log.Printf("✓ Cleaned up %d orphaned locks on startup", cleaned)
 	}
 
 	authService := auth.NewService(jwtSecret)
@@ -58,6 +80,8 @@ func InitializeServices(dbConfig db.Config, jwtSecret string) (*AppConfig, error
 
 	config := &AppConfig{
 		Database:           database,
+		Redis:              redis,
+		LockManager:        lockManager,
 		AuthService:        authService,
 		CurrencyService:    currencyService,
 		TournamentService:  tournamentService,
@@ -69,6 +93,19 @@ func InitializeServices(dbConfig db.Config, jwtSecret string) (*AppConfig, error
 	}
 
 	return config, nil
+}
+
+// Cleanup performs cleanup of resources
+func (cfg *AppConfig) Cleanup() {
+	log.Println("🧹 Cleaning up resources...")
+
+	if cfg.Redis != nil {
+		if err := cfg.Redis.Close(); err != nil {
+			log.Printf("⚠️  Error closing Redis connection: %v", err)
+		}
+	}
+
+	log.Println("✓ Cleanup complete")
 }
 
 // RecoverTablesOnStartup restores all active tables from the database on server startup
