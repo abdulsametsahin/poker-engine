@@ -2566,6 +2566,13 @@ func pauseTournamentTables(tournamentID string) {
 			}
 		}
 	}
+
+	// Broadcast updated state to all tables after pausing
+	bridge.mu.Unlock()
+	for _, table := range tables {
+		broadcastTableState(table.ID)
+	}
+	bridge.mu.Lock()
 }
 
 func resumeTournamentTables(tournamentID string) {
@@ -2587,6 +2594,13 @@ func resumeTournamentTables(tournamentID string) {
 			}
 		}
 	}
+
+	// Broadcast updated state to all tables after resuming
+	bridge.mu.Unlock()
+	for _, table := range tables {
+		broadcastTableState(table.ID)
+	}
+	bridge.mu.Lock()
 }
 
 func broadcastTournamentPaused(tournamentID string) {
@@ -2599,6 +2613,8 @@ func broadcastTournamentPaused(tournamentID string) {
 		Type: "tournament_paused",
 		Payload: map[string]interface{}{
 			"tournament_id": tournamentID,
+			"tournament":    tournament,
+			"status":        "paused",
 			"paused_at":     tournament.PausedAt,
 		},
 	}
@@ -2626,6 +2642,8 @@ func broadcastTournamentResumed(tournamentID string) {
 		Type: "tournament_resumed",
 		Payload: map[string]interface{}{
 			"tournament_id":     tournamentID,
+			"tournament":        tournament,
+			"status":            "in_progress",
 			"resumed_at":        tournament.ResumedAt,
 			"total_paused_time": tournament.TotalPausedDuration,
 		},

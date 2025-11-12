@@ -268,18 +268,32 @@ export const GameView: React.FC = () => {
       showError(message.payload.message || 'An error occurred');
     };
 
+    const handleTournamentPaused = (message: WSMessage) => {
+      addConsoleLog('TOURNAMENT', 'Tournament paused - Game on hold', 'warning');
+      showWarning('Tournament has been paused. Game is on hold.');
+    };
+
+    const handleTournamentResumed = (message: WSMessage) => {
+      addConsoleLog('TOURNAMENT', 'Tournament resumed - Game continuing', 'success');
+      showSuccess('Tournament has been resumed. Game continues!');
+    };
+
     addMessageHandler('table_state', handleTableState);
     addMessageHandler('game_update', handleGameUpdate);
     addMessageHandler('game_complete', handleGameComplete);
     addMessageHandler('error', handleError);
+    addMessageHandler('tournament_paused', handleTournamentPaused);
+    addMessageHandler('tournament_resumed', handleTournamentResumed);
 
     return () => {
       removeMessageHandler('table_state');
       removeMessageHandler('game_update');
       removeMessageHandler('game_complete');
       removeMessageHandler('error');
+      removeMessageHandler('tournament_paused');
+      removeMessageHandler('tournament_resumed');
     };
-  }, [tableId, tableState?.status, tableState?.betting_round, addMessageHandler, removeMessageHandler, showSuccess, showError, addConsoleLog]);
+  }, [tableId, tableState?.status, tableState?.betting_round, tableState?.players, addMessageHandler, removeMessageHandler, showSuccess, showError, showWarning, addConsoleLog]);
 
   const handleAction = useCallback((action: string, amount?: number) => {
     const amountStr = amount ? ` $${amount}` : '';
@@ -464,7 +478,7 @@ export const GameView: React.FC = () => {
         >
           <PokerTable tableState={tableState} currentUserId={currentUserId} />
 
-          {/* Paused Overlay */}
+          {/* Paused Overlay - Game on Hold */}
           {tableState?.status === 'paused' && (
             <Box
               sx={{
@@ -481,9 +495,9 @@ export const GameView: React.FC = () => {
                 zIndex: 1000,
               }}
             >
-              <Pause sx={{ fontSize: 80, color: COLORS.warning, mb: 2 }} />
+              <Pause sx={{ fontSize: 80, color: COLORS.warning.main, mb: 2 }} />
               <Typography variant="h4" sx={{ color: 'white', mb: 1, fontWeight: 'bold' }}>
-                Game Paused
+                Game on Hold
               </Typography>
               <Typography variant="body1" sx={{ color: COLORS.text.secondary }}>
                 Tournament is currently paused. Waiting for resume...
