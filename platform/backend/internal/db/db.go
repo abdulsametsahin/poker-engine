@@ -63,7 +63,14 @@ func New(cfg Config) (*DB, error) {
 	}
 
 	// Run SQL migrations
-	if err := migrations.RunMigrations(cfg); err != nil {
+	migrationCfg := migrations.Config{
+		Host:     cfg.Host,
+		Port:     cfg.Port,
+		User:     cfg.User,
+		Password: cfg.Password,
+		DBName:   cfg.DBName,
+	}
+	if err := migrations.RunMigrations(migrationCfg); err != nil {
 		return nil, fmt.Errorf("failed to run migrations: %w", err)
 	}
 
