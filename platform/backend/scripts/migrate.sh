@@ -43,15 +43,40 @@ print_info() {
     echo -e "${BLUE}ℹ️  $1${NC}"
 }
 
-# Check if MySQL is accessible
+# Check if MySQL is accessible with retry logic
 check_mysql_connection() {
-    if ! mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" -e "SELECT 1" &>/dev/null; then
-        print_error "Cannot connect to MySQL database"
-        echo "Host: $DB_HOST:$DB_PORT"
-        echo "User: $DB_USER"
-        echo "Database: $DB_NAME"
-        exit 1
-    fi
+    local max_attempts=30
+    local attempt=1
+    local wait_time=2
+
+    print_info "Waiting for MySQL database to be ready..."
+    echo "Host: $DB_HOST:$DB_PORT"
+    echo "User: $DB_USER"
+    echo "Database: $DB_NAME"
+    echo ""
+
+    while [ $attempt -le $max_attempts ]; do
+        if mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" -e "SELECT 1" &>/dev/null; then
+            print_success "Successfully connected to MySQL database"
+            return 0
+        fi
+
+        print_warning "Connection attempt $attempt/$max_attempts failed. Retrying in ${wait_time}s..."
+        sleep $wait_time
+
+        # Increase wait time exponentially (up to 10 seconds)
+        if [ $wait_time -lt 10 ]; then
+            wait_time=$((wait_time + 1))
+        fi
+
+        attempt=$((attempt + 1))
+    done
+
+    print_error "Cannot connect to MySQL database after $max_attempts attempts"
+    echo "Host: $DB_HOST:$DB_PORT"
+    echo "User: $DB_USER"
+    echo "Database: $DB_NAME"
+    exit 1
 }
 
 # Get current migration version
