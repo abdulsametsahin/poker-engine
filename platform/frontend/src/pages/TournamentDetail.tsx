@@ -171,6 +171,30 @@ export const TournamentDetail: React.FC = () => {
       }
     };
 
+    const handleTournamentPaused = (message: any) => {
+      if (message.payload?.tournament_id === id) {
+        // Update tournament status to paused
+        if (message.payload.tournament) {
+          setTournament(message.payload.tournament);
+        } else {
+          setTournament(prev => prev ? { ...prev, status: 'paused' } : null);
+        }
+        showSuccess('Tournament has been paused');
+      }
+    };
+
+    const handleTournamentResumed = (message: any) => {
+      if (message.payload?.tournament_id === id) {
+        // Update tournament status to in_progress
+        if (message.payload.tournament) {
+          setTournament(message.payload.tournament);
+        } else {
+          setTournament(prev => prev ? { ...prev, status: 'in_progress' } : null);
+        }
+        showSuccess('Tournament has been resumed');
+      }
+    };
+
     const handleBlindIncrease = (message: any) => {
       if (message.payload?.tournament_id === id) {
         setTournament(prev => prev ? {
@@ -196,6 +220,8 @@ export const TournamentDetail: React.FC = () => {
 
     addMessageHandler('tournament_update', handleTournamentUpdate);
     addMessageHandler('tournament_started', handleTournamentStarted);
+    addMessageHandler('tournament_paused', handleTournamentPaused);
+    addMessageHandler('tournament_resumed', handleTournamentResumed);
     addMessageHandler('blind_level_increased', handleBlindIncrease);
     addMessageHandler('player_eliminated', handlePlayerEliminated);
     addMessageHandler('tournament_complete', handleTournamentComplete);
@@ -203,6 +229,8 @@ export const TournamentDetail: React.FC = () => {
     return () => {
       removeMessageHandler('tournament_update');
       removeMessageHandler('tournament_started');
+      removeMessageHandler('tournament_paused');
+      removeMessageHandler('tournament_resumed');
       removeMessageHandler('blind_level_increased');
       removeMessageHandler('player_eliminated');
       removeMessageHandler('tournament_complete');

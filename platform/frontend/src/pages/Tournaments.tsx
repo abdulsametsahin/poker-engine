@@ -20,6 +20,7 @@ import { useNavigate } from 'react-router-dom';
 import { tournamentAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { useWebSocket } from '../contexts/WebSocketContext';
 import { AppLayout } from '../components/common/AppLayout';
 import { Button } from '../components/common/Button';
 import { Card } from '../components/common/Card';
@@ -49,6 +50,7 @@ interface Tournament {
 export const Tournaments: React.FC = () => {
   const { user } = useAuth();
   const { showSuccess, showError } = useToast();
+  const { addMessageHandler, removeMessageHandler } = useWebSocket();
   const navigate = useNavigate();
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [registeredTournaments, setRegisteredTournaments] = useState<Set<string>>(new Set());
@@ -102,6 +104,54 @@ export const Tournaments: React.FC = () => {
   useEffect(() => {
     fetchTournaments();
   }, [fetchTournaments]);
+
+  // Setup WebSocket handlers for real-time tournament updates
+  useEffect(() => {
+    const handleTournamentPaused = (message: any) => {
+      const tournamentId = message.payload?.tournament_id;
+      if (tournamentId) {
+        // Update the tournament status in the list
+        setTournaments(prev => prev.map(t => 
+          t.id === tournamentId 
+            ? { ...t, status: 'paused' }
+            : t
+        ));
+      }
+    };
+
+    const handleTournamentResumed = (message: any) => {
+      const tournamentId = message.payload?.tournament_id;
+      if (tournamentId) {
+        // Update the tournament status in the list
+        setTournaments(prev => prev.map(t => 
+          t.id === tournamentId 
+            ? { ...t, status: 'in_progress' }
+            : t
+        ));
+      }
+    };
+
+    const handleTournamentUpdate = (message: any) => {
+      if (message.payload?.tournament) {
+        const updatedTournament = message.payload.tournament;
+        setTournaments(prev => prev.map(t => 
+          t.id === updatedTournament.id 
+            ? { ...t, ...updatedTournament }
+            : t
+        ));
+      }
+    };
+
+    addMessageHandler('tournament_paused', handleTournamentPaused);
+    addMessageHandler('tournament_resumed', handleTournamentResumed);
+    addMessageHandler('tournament_update', handleTournamentUpdate);
+
+    return () => {
+      removeMessageHandler('tournament_paused');
+      removeMessageHandler('tournament_resumed');
+      removeMessageHandler('tournament_update');
+    };
+  }, [addMessageHandler, removeMessageHandler]);
 
   const handleCreateTournament = async () => {
     try {
