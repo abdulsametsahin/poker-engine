@@ -1,9 +1,11 @@
 package tournament
 
 import (
+	"context"
 	"fmt"
 	"log"
 
+	"poker-platform/backend/internal/currency"
 	"poker-platform/backend/internal/models"
 
 	"gorm.io/gorm"
@@ -11,13 +13,17 @@ import (
 
 // PrizeDistributor handles prize calculation and distribution
 type PrizeDistributor struct {
-	db                       *gorm.DB
+	db                         *gorm.DB
+	currencyService            *currency.Service
 	onPrizeDistributedCallback func(tournamentID, userID string, amount int)
 }
 
 // NewPrizeDistributor creates a new prize distributor
-func NewPrizeDistributor(db *gorm.DB) *PrizeDistributor {
-	return &PrizeDistributor{db: db}
+func NewPrizeDistributor(db *gorm.DB, currencyService *currency.Service) *PrizeDistributor {
+	return &PrizeDistributor{
+		db:              db,
+		currencyService: currencyService,
+	}
 }
 
 // SetOnPrizeDistributedCallback sets the callback for prize distribution
@@ -58,8 +64,10 @@ func (pd *PrizeDistributor) CalculatePrizes(tournamentID string) ([]PrizeInfo, e
 	// Calculate total prize pool
 	prizePool := tournament.BuyIn * len(players)
 
-	// Calculate prizes for each position
+	// Calculate prizes for each position using integer math
 	var prizes []PrizeInfo
+	totalAllocated := 0
+
 	for _, prizePosition := range prizeStructure.Positions {
 		// Find player at this position
 		var playerAtPosition *models.TournamentPlayer
@@ -75,8 +83,9 @@ func (pd *PrizeDistributor) CalculatePrizes(tournamentID string) ([]PrizeInfo, e
 			continue
 		}
 
-		// Calculate prize amount
-		prizeAmount := int(float64(prizePool) * prizePosition.Percentage)
+		// Calculate prize amount using basis points (integer math, no floats)
+		prizeAmount := (prizePool * prizePosition.BasisPoints) / 10000
+		totalAllocated += prizeAmount
 
 		// Get username
 		var user models.User
@@ -91,6 +100,14 @@ func (pd *PrizeDistributor) CalculatePrizes(tournamentID string) ([]PrizeInfo, e
 			Username: username,
 			Amount:   prizeAmount,
 		})
+	}
+
+	// Give any remainder to 1st place (due to integer division)
+	if len(prizes) > 0 {
+		remainder := prizePool - totalAllocated
+		if remainder > 0 {
+			prizes[0].Amount += remainder
+		}
 	}
 
 	return prizes, nil
@@ -124,14 +141,26 @@ func (pd *PrizeDistributor) DistributePrizes(tournamentID string) error {
 		return err
 	}
 
-	// Distribute each prize
+	// Distribute each prize using currency service for atomic operations and audit trail
+	ctx := context.Background()
 	for _, prize := range prizes {
-		// Add chips to user
-		if err := tx.Model(&models.User{}).
-			Where("id = ?", prize.UserID).
-			Update("chips", gorm.Expr("chips + ?", prize.Amount)).Error; err != nil {
+		// Skip zero prizes
+		if prize.Amount <= 0 {
+			continue
+		}
+
+		// Add chips to user using currency service (with audit trail)
+		description := fmt.Sprintf("Prize for position %d in tournament %s", prize.Position, tournament.Name)
+		if err := pd.currencyService.AddChips(
+			ctx,
+			prize.UserID,
+			prize.Amount,
+			currency.TxTypeTournamentPrize,
+			tournamentID,
+			description,
+		); err != nil {
 			tx.Rollback()
-			return fmt.Errorf("failed to add chips to user %s: %w", prize.UserID, err)
+			return fmt.Errorf("failed to add prize chips to user %s: %w", prize.UserID, err)
 		}
 
 		// Update prize amount in tournament_players table
