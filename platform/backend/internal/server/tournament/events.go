@@ -10,6 +10,7 @@ import (
 	"poker-platform/backend/internal/server/game"
 	"poker-platform/backend/internal/tournament"
 
+	"poker-engine/engine"
 	pokerModels "poker-engine/models"
 )
 
@@ -524,6 +525,83 @@ func HandlePlayerElimination(
 		tournamentID, user.Username, position, remainingCount)
 }
 
+// BroadcastTournamentTableState broadcasts table state to all clients at a tournament table
+func BroadcastTournamentTableState(bridge *game.GameBridge, tableID string) {
+	getTableFunc := func(id string) (interface{}, bool) {
+		bridge.Mu.RLock()
+		defer bridge.Mu.RUnlock()
+		table, exists := bridge.Tables[id]
+		return table, exists
+	}
+
+	bridge.Mu.RLock()
+	clients := bridge.Clients
+	bridge.Mu.RUnlock()
+
+	tableInterface, exists := getTableFunc(tableID)
+	if !exists {
+		return
+	}
+
+	table, ok := tableInterface.(*engine.Table)
+	if !ok {
+		return
+	}
+
+	state := table.GetState()
+
+	for _, clientInterface := range clients {
+		type Sender interface {
+			GetTableID() string
+			GetSendChannel() chan []byte
+		}
+		if sender, ok := clientInterface.(Sender); ok && sender.GetTableID() == tableID {
+			players := []map[string]interface{}{}
+			for _, p := range state.Players {
+				if p != nil {
+					playerData := map[string]interface{}{
+						"user_id":             p.PlayerID,
+						"player_name":         p.PlayerName,
+						"chips":               p.Chips,
+						"bet":                 p.Bet,
+						"status":              string(p.Status),
+						"has_acted_this_round": p.HasActedThisRound,
+						"last_action":         string(p.LastAction),
+						"last_action_amount":  p.LastActionAmount,
+					}
+					players = append(players, playerData)
+				}
+			}
+
+			potMain := 0
+			potSide := 0
+			if state.CurrentHand != nil {
+				potMain = state.CurrentHand.Pot.Main
+				potSide = game.SumSidePots(state.CurrentHand.Pot.Side)
+			}
+
+			message := map[string]interface{}{
+				"type": "table_state",
+				"payload": map[string]interface{}{
+					"table_id":      state.TableID,
+					"status":        string(state.Status),
+					"players":       players,
+					"current_hand":  state.CurrentHand,
+					"winners":       state.Winners,
+					"pot_main":      potMain,
+					"pot_side":      potSide,
+				},
+			}
+
+			data, _ := json.Marshal(message)
+			select {
+			case sender.GetSendChannel() <- data:
+			default:
+			}
+		}
+	}
+}
+
 // HandleTournamentComplete broadcasts tournament completion
 func HandleTournamentComplete(
 	tournamentID string,
@@ -545,11 +623,11 @@ func HandleTournamentComplete(
 				state := engineTable.GetState()
 				if state.Status == pokerModels.StatusHandComplete || state.Status == pokerModels.StatusPlaying {
 					// Set status to waiting (game is over for this table)
-					engineTable.UpdateStatus(pokerModels.StatusWaiting)
+					engineTable.GetGame().UpdateStatus(pokerModels.StatusWaiting)
 					log.Printf("[TOURNAMENT] Updated table %s engine status to waiting (tournament complete)", table.ID)
 
-					// Broadcast final table state
-					game.BroadcastTableState(bridge, table.ID)
+					// Broadcast final table state to all clients
+					BroadcastTournamentTableState(bridge, table.ID)
 					log.Printf("[TOURNAMENT] Broadcasted final table state for table %s", table.ID)
 				}
 			}
