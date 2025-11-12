@@ -115,8 +115,9 @@ func (et *EliminationTracker) EliminatePlayer(tournamentID, userID string) error
 	}
 
 	// Check if tournament is complete
-	if remainingPlayers == 1 {
-		// Only one player left, tournament is complete
+	// When we eliminate the 2nd place finisher, only the winner remains
+	if remainingPlayers == 2 {
+		// Only one player left after this elimination, tournament is complete
 		et.CompleteTournament(tournamentID)
 	}
 
