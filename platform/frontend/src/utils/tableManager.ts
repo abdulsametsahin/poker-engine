@@ -1,5 +1,6 @@
 /**
  * Utility functions for managing active table sessions
+ * Allows users to track and switch between multiple active poker tables
  */
 
 const ACTIVE_TABLES_KEY = 'poker_active_tables';
