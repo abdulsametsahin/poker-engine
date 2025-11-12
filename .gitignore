@@ -41,3 +41,5 @@ platform/frontend/.env.production.local
 
 # Logs
 *.log
+
+poker-platform-server
