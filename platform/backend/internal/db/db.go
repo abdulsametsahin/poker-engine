@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	"poker-platform/backend/internal/models"
+	"poker-platform/backend/internal/migrations"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -62,37 +62,12 @@ func New(cfg Config) (*DB, error) {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	// Run auto migrations
-	if err := runMigrations(db); err != nil {
+	// Run SQL migrations
+	if err := migrations.RunMigrations(cfg); err != nil {
 		return nil, fmt.Errorf("failed to run migrations: %w", err)
 	}
 
 	log.Println("Database connected and migrations completed successfully")
 
 	return &DB{db}, nil
-}
-
-// runMigrations runs auto migrations for all models
-func runMigrations(db *gorm.DB) error {
-	log.Println("Running auto migrations...")
-
-	// Migrate all models
-	err := db.AutoMigrate(
-		&models.User{},
-		&models.Table{},
-		&models.TableSeat{},
-		&models.Tournament{},
-		&models.TournamentPlayer{},
-		&models.Hand{},
-		&models.HandAction{},
-		&models.Session{},
-		&models.MatchmakingEntry{},
-	)
-
-	if err != nil {
-		return fmt.Errorf("auto migration failed: %w", err)
-	}
-
-	log.Println("Auto migrations completed successfully")
-	return nil
 }
