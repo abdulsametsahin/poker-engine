@@ -123,6 +123,28 @@ services:
     networks:
       - poker-network
 
+  # DbGate - Database management tool
+  dbgate:
+    image: dbgate/dbgate
+    container_name: poker-engine-dbgate
+    restart: unless-stopped
+    ports:
+      - "10080:3000"
+    environment:
+      - CONNECTIONS=poker_db
+      - LABEL_poker_db=Poker Platform Database
+      - SERVER_poker_db=db
+      - USER_poker_db=${DB_USER:-poker_user}
+      - PASSWORD_poker_db=${DB_PASSWORD:-poker_password}
+      - PORT_poker_db=3306
+      - ENGINE_poker_db=mysql@dbgate-plugin-mysql
+      - DATABASE_poker_db=${DB_NAME:-poker_platform}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - poker-network
+
 volumes:
   db_data:
     driver: local

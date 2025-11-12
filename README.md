@@ -52,6 +52,12 @@ Or use the convenience script:
 
 Access the platform at `http://localhost`
 
+The platform includes the following services:
+- **Frontend**: http://localhost (port 80)
+- **Backend API**: http://localhost:8080
+- **DbGate** (Database Management): http://localhost:10080
+- **Grafana** (Monitoring): http://localhost:3000
+
 **See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed Docker deployment instructions, including production deployment to Digital Ocean.**
 
 ### Manual Setup (Alternative)
