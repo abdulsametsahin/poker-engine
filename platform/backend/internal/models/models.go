@@ -222,8 +222,8 @@ type BlindLevel struct {
 
 // PrizePosition represents prize distribution for a position
 type PrizePosition struct {
-	Position   int     `json:"position"`    // 1 = 1st place, 2 = 2nd place, etc.
-	Percentage float64 `json:"percentage"`  // Percentage of total prize pool
+	Position    int `json:"position"`     // 1 = 1st place, 2 = 2nd place, etc.
+	BasisPoints int `json:"basis_points"` // Basis points (10000 = 100%, 5000 = 50%, etc.)
 }
 
 // TournamentStructure represents the complete blind schedule

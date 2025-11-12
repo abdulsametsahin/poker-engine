@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"poker-platform/backend/internal/auth"
+	"poker-platform/backend/internal/currency"
 	"poker-platform/backend/internal/db"
 	"poker-platform/backend/internal/models"
 	"poker-platform/backend/internal/recovery"
@@ -29,6 +30,7 @@ import (
 var (
 	database            *db.DB
 	authService         *auth.Service
+	currencyService     *currency.Service
 	tournamentService   *tournament.Service
 	tournamentStarter   *tournament.Starter
 	blindManager        *tournament.BlindManager
@@ -128,12 +130,13 @@ func main() {
 	defer sqlDB.Close()
 
 	authService = auth.NewService(getEnv("JWT_SECRET", "secret"))
-	tournamentService = tournament.NewService(database.DB)
+	currencyService = currency.NewService(database.DB)
+	tournamentService = tournament.NewService(database.DB, currencyService)
 	tournamentStarter = tournament.NewStarter(database.DB, tournamentService)
 	blindManager = tournament.NewBlindManager(database.DB)
 	eliminationTracker = tournament.NewEliminationTracker(database.DB)
 	consolidator = tournament.NewConsolidator(database.DB)
-	prizeDistributor = tournament.NewPrizeDistributor(database.DB)
+	prizeDistributor = tournament.NewPrizeDistributor(database.DB, currencyService)
 
 	// Connect prize distributor to elimination tracker
 	eliminationTracker.SetPrizeDistributor(prizeDistributor)
@@ -165,9 +168,9 @@ func main() {
 		go handleTableConsolidation(tournamentID)
 	})
 
-	// Set callback for prize distribution
+	// Set callback for prize distribution (synchronous to prevent race conditions)
 	prizeDistributor.SetOnPrizeDistributedCallback(func(tournamentID, userID string, amount int) {
-		go handlePrizeDistributed(tournamentID, userID, amount)
+		handlePrizeDistributed(tournamentID, userID, amount)
 	})
 
 	// Start tournament services in background

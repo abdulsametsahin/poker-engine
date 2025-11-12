@@ -1,10 +1,12 @@
 package tournament
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
 
+	"poker-platform/backend/internal/currency"
 	"poker-platform/backend/internal/models"
 
 	"github.com/google/uuid"
@@ -13,12 +15,16 @@ import (
 
 // Service handles tournament operations
 type Service struct {
-	db *gorm.DB
+	db              *gorm.DB
+	currencyService *currency.Service
 }
 
 // NewService creates a new tournament service
-func NewService(db *gorm.DB) *Service {
-	return &Service{db: db}
+func NewService(db *gorm.DB, currencyService *currency.Service) *Service {
+	return &Service{
+		db:              db,
+		currencyService: currencyService,
+	}
 }
 
 // CreateTournament creates a new tournament
@@ -169,25 +175,22 @@ func (s *Service) RegisterPlayer(tournamentID, userID string) error {
 		return ErrAlreadyRegistered
 	}
 
-	// Get user and check chips
-	var user models.User
-	if err := tx.Where("id = ?", userID).First(&user).Error; err != nil {
+	// Deduct buy-in from user using currency service (with validation and audit trail)
+	ctx := context.Background()
+	description := fmt.Sprintf("Buy-in for tournament: %s", tournament.Name)
+	if err := s.currencyService.DeductChips(
+		ctx,
+		userID,
+		tournament.BuyIn,
+		currency.TxTypeTournamentBuyIn,
+		tournamentID,
+		description,
+	); err != nil {
 		tx.Rollback()
-		if err == gorm.ErrRecordNotFound {
-			return fmt.Errorf("user not found")
+		if err == currency.ErrInsufficientChips {
+			return ErrInsufficientChips
 		}
-		return err
-	}
-
-	if user.Chips < tournament.BuyIn {
-		tx.Rollback()
-		return ErrInsufficientChips
-	}
-
-	// Deduct buy-in from user
-	if err := tx.Model(&user).Update("chips", gorm.Expr("chips - ?", tournament.BuyIn)).Error; err != nil {
-		tx.Rollback()
-		return err
+		return fmt.Errorf("failed to deduct buy-in: %w", err)
 	}
 
 	// Create tournament player entry
@@ -270,10 +273,19 @@ func (s *Service) UnregisterPlayer(tournamentID, userID string) error {
 		return err
 	}
 
-	// Refund buy-in to user
-	if err := tx.Model(&models.User{}).Where("id = ?", userID).Update("chips", gorm.Expr("chips + ?", tournament.BuyIn)).Error; err != nil {
+	// Refund buy-in to user using currency service (with audit trail)
+	ctx := context.Background()
+	description := fmt.Sprintf("Refund for tournament: %s", tournament.Name)
+	if err := s.currencyService.AddChips(
+		ctx,
+		userID,
+		tournament.BuyIn,
+		currency.TxTypeTournamentRefund,
+		tournamentID,
+		description,
+	); err != nil {
 		tx.Rollback()
-		return err
+		return fmt.Errorf("failed to refund buy-in: %w", err)
 	}
 
 	// Delete tournament player entry
@@ -348,11 +360,20 @@ func (s *Service) CancelTournament(tournamentID, userID string) error {
 		return err
 	}
 
-	// Refund all players
+	// Refund all players using currency service (with audit trail)
+	ctx := context.Background()
 	for _, player := range players {
-		if err := tx.Model(&models.User{}).Where("id = ?", player.UserID).Update("chips", gorm.Expr("chips + ?", tournament.BuyIn)).Error; err != nil {
+		description := fmt.Sprintf("Refund from cancelled tournament: %s", tournament.Name)
+		if err := s.currencyService.AddChips(
+			ctx,
+			player.UserID,
+			tournament.BuyIn,
+			currency.TxTypeTournamentRefund,
+			tournamentID,
+			description,
+		); err != nil {
 			tx.Rollback()
-			return err
+			return fmt.Errorf("failed to refund player %s: %w", player.UserID, err)
 		}
 	}
 

@@ -109,7 +109,7 @@ var (
 		Name:        "Winner Takes All",
 		Description: "Single winner receives entire prize pool",
 		Positions: []models.PrizePosition{
-			{Position: 1, Percentage: 100.0},
+			{Position: 1, BasisPoints: 10000}, // 100%
 		},
 	}
 
@@ -118,9 +118,9 @@ var (
 		Name:        "Top 3",
 		Description: "Prize distribution for top 3 finishers",
 		Positions: []models.PrizePosition{
-			{Position: 1, Percentage: 50.0},
-			{Position: 2, Percentage: 30.0},
-			{Position: 3, Percentage: 20.0},
+			{Position: 1, BasisPoints: 5000}, // 50%
+			{Position: 2, BasisPoints: 3000}, // 30%
+			{Position: 3, BasisPoints: 2000}, // 20%
 		},
 	}
 
@@ -129,11 +129,11 @@ var (
 		Name:        "Top 5",
 		Description: "Prize distribution for top 5 finishers",
 		Positions: []models.PrizePosition{
-			{Position: 1, Percentage: 40.0},
-			{Position: 2, Percentage: 25.0},
-			{Position: 3, Percentage: 17.0},
-			{Position: 4, Percentage: 11.0},
-			{Position: 5, Percentage: 7.0},
+			{Position: 1, BasisPoints: 4000}, // 40%
+			{Position: 2, BasisPoints: 2500}, // 25%
+			{Position: 3, BasisPoints: 1700}, // 17%
+			{Position: 4, BasisPoints: 1100}, // 11%
+			{Position: 5, BasisPoints: 700},  // 7%
 		},
 	}
 
@@ -142,16 +142,16 @@ var (
 		Name:        "Top 10",
 		Description: "Prize distribution for top 10 finishers",
 		Positions: []models.PrizePosition{
-			{Position: 1, Percentage: 30.0},
-			{Position: 2, Percentage: 20.0},
-			{Position: 3, Percentage: 13.0},
-			{Position: 4, Percentage: 10.0},
-			{Position: 5, Percentage: 8.0},
-			{Position: 6, Percentage: 6.0},
-			{Position: 7, Percentage: 5.0},
-			{Position: 8, Percentage: 4.0},
-			{Position: 9, Percentage: 2.5},
-			{Position: 10, Percentage: 1.5},
+			{Position: 1, BasisPoints: 3000},  // 30%
+			{Position: 2, BasisPoints: 2000},  // 20%
+			{Position: 3, BasisPoints: 1300},  // 13%
+			{Position: 4, BasisPoints: 1000},  // 10%
+			{Position: 5, BasisPoints: 800},   // 8%
+			{Position: 6, BasisPoints: 600},   // 6%
+			{Position: 7, BasisPoints: 500},   // 5%
+			{Position: 8, BasisPoints: 400},   // 4%
+			{Position: 9, BasisPoints: 250},   // 2.5%
+			{Position: 10, BasisPoints: 150},  // 1.5%
 		},
 	}
 
@@ -160,27 +160,27 @@ var (
 		Name:        "Top 10% (WSOP Style)",
 		Description: "Pays top 10% of field with standard WSOP structure",
 		Positions: []models.PrizePosition{
-			{Position: 1, Percentage: 30.0},
-			{Position: 2, Percentage: 18.0},
-			{Position: 3, Percentage: 12.0},
-			{Position: 4, Percentage: 9.0},
-			{Position: 5, Percentage: 7.0},
-			{Position: 6, Percentage: 5.5},
-			{Position: 7, Percentage: 4.5},
-			{Position: 8, Percentage: 3.5},
-			{Position: 9, Percentage: 2.8},
-			{Position: 10, Percentage: 2.2},
-			// Remaining positions get proportional distribution of remaining 5.5%
+			{Position: 1, BasisPoints: 3000},  // 30%
+			{Position: 2, BasisPoints: 1800},  // 18%
+			{Position: 3, BasisPoints: 1200},  // 12%
+			{Position: 4, BasisPoints: 900},   // 9%
+			{Position: 5, BasisPoints: 700},   // 7%
+			{Position: 6, BasisPoints: 550},   // 5.5%
+			{Position: 7, BasisPoints: 450},   // 4.5%
+			{Position: 8, BasisPoints: 350},   // 3.5%
+			{Position: 9, BasisPoints: 280},   // 2.8%
+			{Position: 10, BasisPoints: 220},  // 2.2%
+			// Remaining 5.5% (550 basis points) given to 1st place via DistributePrizesExact
 		},
 	}
 
 	// HeadsUpPayout - 50/50 for heads-up
 	HeadsUpPayout = models.PrizeStructureConfig{
-		Name:        "Heads-Up (50/50)",
-		Description: "Even split for heads-up tournament",
+		Name:        "Heads-Up (65/35)",
+		Description: "Standard heads-up tournament payout",
 		Positions: []models.PrizePosition{
-			{Position: 1, Percentage: 65.0},
-			{Position: 2, Percentage: 35.0},
+			{Position: 1, BasisPoints: 6500}, // 65%
+			{Position: 2, BasisPoints: 3500}, // 35%
 		},
 	}
 )
@@ -258,41 +258,41 @@ func ValidatePrizeStructure(structure models.PrizeStructureConfig) error {
 		return ErrEmptyPrizeStructure
 	}
 
-	totalPercentage := 0.0
+	totalBasisPoints := 0
 	for i, pos := range structure.Positions {
 		if pos.Position != i+1 {
 			return ErrInvalidPrizePositions
 		}
-		if pos.Percentage <= 0 || pos.Percentage > 100 {
+		if pos.BasisPoints <= 0 || pos.BasisPoints > 10000 {
 			return ErrInvalidPrizePercentage
 		}
-		totalPercentage += pos.Percentage
+		totalBasisPoints += pos.BasisPoints
 	}
 
-	// Allow some tolerance for floating point arithmetic (99.9% - 100.1%)
-	if totalPercentage < 99.9 || totalPercentage > 100.1 {
+	// Allow up to 100% (10000 basis points), but can be less if remainder goes to 1st
+	if totalBasisPoints > 10000 {
 		return ErrPrizePercentageMismatch
 	}
 
 	return nil
 }
 
-// CalculatePrizeAmounts calculates actual prize amounts based on prize pool
+// CalculatePrizeAmounts calculates actual prize amounts based on prize pool using basis points
 func CalculatePrizeAmounts(prizePool int, structure models.PrizeStructureConfig) map[int]int {
 	prizes := make(map[int]int)
-	remainingPool := prizePool
 	totalAllocated := 0
 
-	for i, pos := range structure.Positions {
-		if i < len(structure.Positions)-1 {
-			// Calculate prize for this position
-			amount := int(float64(prizePool) * pos.Percentage / 100.0)
-			prizes[pos.Position] = amount
-			totalAllocated += amount
-		} else {
-			// Give remaining pool to last position to handle rounding
-			prizes[pos.Position] = remainingPool - totalAllocated
-		}
+	// Calculate each prize using integer math
+	for _, pos := range structure.Positions {
+		amount := (prizePool * pos.BasisPoints) / 10000
+		prizes[pos.Position] = amount
+		totalAllocated += amount
+	}
+
+	// Give any remainder to 1st place (due to integer division)
+	remainder := prizePool - totalAllocated
+	if remainder > 0 {
+		prizes[1] += remainder
 	}
 
 	return prizes

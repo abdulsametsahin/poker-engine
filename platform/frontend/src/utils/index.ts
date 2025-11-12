@@ -59,7 +59,9 @@ export const isRedSuit = (suit: string): boolean => {
   return suit === '♥' || suit === '♦';
 };
 
-// Chip formatting
+// Currency/Chip formatting
+// Note: All currency values are integers representing whole chips.
+// Backend uses basis points (10000 = 100%) for prize calculations to ensure precision.
 export const formatChips = (amount: number): string => {
   if (amount >= 1000000) {
     return `$${(amount / 1000000).toFixed(1)}M`;
@@ -72,6 +74,11 @@ export const formatChips = (amount: number): string => {
 
 export const formatChipsFull = (amount: number): string => {
   return `$${amount.toLocaleString()}`;
+};
+
+// Format chips with optional label
+export const formatChipsWithLabel = (amount: number, label: string = 'chips'): string => {
+  return `${formatChipsFull(amount)} ${label}`;
 };
 
 // String utilities
