@@ -207,6 +207,11 @@ func (g *Game) ProcessAction(playerID string, action models.PlayerAction, amount
 		return fmt.Errorf("not your turn")
 	}
 
+	// Check if player has already acted this turn
+	if player.HasActedThisRound {
+		return fmt.Errorf("you have already acted this turn")
+	}
+
 	g.stopActionTimer()
 
 	validator := NewBettingValidator(g.table.CurrentHand.CurrentBet, g.table.CurrentHand.MinRaise)
