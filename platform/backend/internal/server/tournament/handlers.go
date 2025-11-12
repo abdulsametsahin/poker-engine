@@ -373,11 +373,9 @@ func PauseTournamentTables(tournamentID string, database *db.DB, bridge *game.Ga
 	}
 
 	// Broadcast updated state to all tables after pausing
-	bridge.Mu.Unlock()
 	for _, table := range tables {
 		broadcastFunc(table.ID)
 	}
-	bridge.Mu.Lock()
 }
 
 // ResumeTournamentTables resumes all tables for a tournament
@@ -402,11 +400,9 @@ func ResumeTournamentTables(tournamentID string, database *db.DB, bridge *game.G
 	}
 
 	// Broadcast updated state to all tables after resuming
-	bridge.Mu.Unlock()
 	for _, table := range tables {
 		broadcastFunc(table.ID)
 	}
-	bridge.Mu.Lock()
 }
 
 // ReinitializeTournamentTables recreates tables after consolidation
