@@ -7,18 +7,21 @@ import (
 	"time"
 )
 
+// Game manages a poker game's state and lifecycle.
+// It is thread-safe and uses a mutex to protect concurrent access to game state.
 type Game struct {
 	table           *models.Table
 	potCalculator   *PotCalculator
 	actionTimer     *time.Timer
 	onTimeout       func(string)
 	onEvent         func(models.Event)
-	mu              sync.Mutex
+	mu              sync.Mutex     // Protects all game state modifications
 	pausedAt        *time.Time
 	pauseDuration   time.Duration
 	timerRemaining  time.Duration
 }
 
+// NewGame creates a new Game instance with the given table, timeout handler, and event handler.
 func NewGame(table *models.Table, onTimeout func(string), onEvent func(models.Event)) *Game {
 	return &Game{
 		table:         table,
