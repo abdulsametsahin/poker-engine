@@ -28,6 +28,9 @@ WORKDIR /root/
 # Copy the binary from builder
 COPY --from=builder /app/platform/backend/poker-server .
 
+# Copy migrations directory
+COPY --from=builder /app/platform/backend/migrations ./migrations
+
 # Copy database scripts (optional, for reference)
 COPY --from=builder /app/platform/backend/scripts ./scripts
 
