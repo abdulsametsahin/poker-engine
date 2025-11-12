@@ -122,17 +122,27 @@ export const PokerTable: React.FC<PokerTableProps> = memo(({
         overflow: 'visible',
       }}
     >
-      {/* SVG Oval Poker Table */}
+      {/* SVG Oval Poker Table - Maintains 3:2 aspect ratio */}
       <Box
         sx={{
           position: 'absolute',
-          width: '90%',
-          height: '90%',
+          width: '100%',
+          height: '100%',
           maxWidth: '1200px',
           maxHeight: '800px',
           top: '50%',
           left: '50%',
           transform: 'translate(-50%, -50%)',
+          // Maintain aspect ratio
+          aspectRatio: '3 / 2',
+          '@media (max-width: 1200px)': {
+            width: '95%',
+            height: 'auto',
+          },
+          '@media (max-width: 768px)': {
+            width: '98%',
+            height: 'auto',
+          },
         }}
       >
         <OvalTableSVG />
@@ -155,24 +165,46 @@ export const PokerTable: React.FC<PokerTableProps> = memo(({
         {/* Pot */}
         <Box
           sx={{
-            px: 2,
-            py: 1,
+            px: { xs: 1.5, sm: 2, md: 2.5 },
+            py: { xs: 0.75, sm: 1, md: 1.25 },
             borderRadius: RADIUS.sm,
-            background: 'rgba(0, 0, 0, 0.6)',
-            backdropFilter: 'blur(10px)',
-            border: `1.5px solid ${COLORS.accent.main}`,
-            boxShadow: `0 2px 8px rgba(0, 0, 0, 0.5), 0 0 12px ${COLORS.accent.glow}`,
-            minWidth: 90,
+            background: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(16px)',
+            border: `2px solid ${COLORS.accent.main}`,
+            boxShadow: `
+              0 4px 16px rgba(0, 0, 0, 0.6), 
+              0 0 24px ${COLORS.accent.glow},
+              inset 0 1px 0 rgba(255, 255, 255, 0.1)
+            `,
+            minWidth: { xs: 80, sm: 90, md: 100 },
             textAlign: 'center',
+            position: 'relative',
+            overflow: 'hidden',
+            // Animated shimmer effect
+            '&::before': {
+              content: '""',
+              position: 'absolute',
+              top: 0,
+              left: '-100%',
+              width: '100%',
+              height: '100%',
+              background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent)',
+              animation: 'shimmer 3s infinite',
+            },
+            '@keyframes shimmer': {
+              '0%': { left: '-100%' },
+              '100%': { left: '100%' },
+            },
           }}
         >
           <Typography
             variant="caption"
             sx={{
               color: COLORS.text.secondary,
-              fontSize: '9px',
-              fontWeight: 600,
-              letterSpacing: '0.08em',
+              fontSize: { xs: '8px', sm: '9px', md: '10px' },
+              fontWeight: 700,
+              letterSpacing: '0.12em',
+              textShadow: '0 2px 4px rgba(0,0,0,0.5)',
             }}
           >
             POT
@@ -182,9 +214,11 @@ export const PokerTable: React.FC<PokerTableProps> = memo(({
             sx={{
               color: COLORS.accent.main,
               fontWeight: 900,
-              fontSize: '20px',
+              fontSize: { xs: '18px', sm: '20px', md: '24px' },
               lineHeight: 1.1,
               fontFamily: 'monospace',
+              textShadow: `0 0 16px ${COLORS.accent.glow}, 0 2px 8px rgba(0,0,0,0.8)`,
+              letterSpacing: '0.05em',
             }}
           >
             ${pot}
@@ -195,14 +229,15 @@ export const PokerTable: React.FC<PokerTableProps> = memo(({
         {community_cards.length > 0 && (
           <Stack
             direction="row"
-            spacing={0.75}
+            spacing={{ xs: 0.5, sm: 0.65, md: 0.75 }}
             sx={{
-              px: 1.5,
-              py: 1,
+              px: { xs: 1, sm: 1.25, md: 1.5 },
+              py: { xs: 0.75, sm: 0.85, md: 1 },
               borderRadius: RADIUS.sm,
-              background: 'rgba(0, 0, 0, 0.5)',
-              backdropFilter: 'blur(10px)',
-              border: `1px solid ${COLORS.border.heavy}`,
+              background: 'rgba(0, 0, 0, 0.65)',
+              backdropFilter: 'blur(16px)',
+              border: `1.5px solid ${COLORS.border.heavy}`,
+              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.05)',
             }}
           >
             {community_cards.map((card, idx) => (
@@ -220,22 +255,39 @@ export const PokerTable: React.FC<PokerTableProps> = memo(({
         {status === 'playing' && betting_round && (
           <Box
             sx={{
-              px: 2,
-              py: 0.75,
+              px: { xs: 1.5, sm: 2, md: 2.5 },
+              py: { xs: 0.5, sm: 0.65, md: 0.75 },
               borderRadius: RADIUS.sm,
-              background: `linear-gradient(135deg, ${COLORS.primary.main}40 0%, ${COLORS.secondary.main}40 100%)`,
-              backdropFilter: 'blur(10px)',
-              border: `1px solid ${COLORS.primary.main}`,
-              boxShadow: `0 0 8px ${COLORS.primary.glow}`,
+              background: `linear-gradient(135deg, ${COLORS.primary.main}50 0%, ${COLORS.secondary.main}50 100%)`,
+              backdropFilter: 'blur(16px)',
+              border: `1.5px solid ${COLORS.primary.main}`,
+              boxShadow: `
+                0 4px 12px rgba(0, 0, 0, 0.5), 
+                0 0 16px ${COLORS.primary.glow},
+                inset 0 1px 0 rgba(255, 255, 255, 0.15)
+              `,
+              position: 'relative',
+              overflow: 'hidden',
+              // Animated pulse effect
+              animation: 'pulse-glow 2s ease-in-out infinite',
+              '@keyframes pulse-glow': {
+                '0%, 100%': {
+                  boxShadow: `0 4px 12px rgba(0, 0, 0, 0.5), 0 0 16px ${COLORS.primary.glow}, inset 0 1px 0 rgba(255, 255, 255, 0.15)`,
+                },
+                '50%': {
+                  boxShadow: `0 4px 16px rgba(0, 0, 0, 0.6), 0 0 24px ${COLORS.primary.glow}, inset 0 1px 0 rgba(255, 255, 255, 0.2)`,
+                },
+              },
             }}
           >
             <Typography
               variant="caption"
               sx={{
                 color: COLORS.primary.light,
-                fontSize: '10px',
-                fontWeight: 700,
-                letterSpacing: '0.08em',
+                fontSize: { xs: '9px', sm: '10px', md: '11px' },
+                fontWeight: 800,
+                letterSpacing: '0.1em',
+                textShadow: '0 2px 4px rgba(0,0,0,0.5)',
               }}
             >
               {getBettingRoundName(betting_round)}
@@ -245,9 +297,10 @@ export const PokerTable: React.FC<PokerTableProps> = memo(({
                 variant="caption"
                 sx={{
                   color: COLORS.text.secondary,
-                  fontSize: '8px',
+                  fontSize: { xs: '7px', sm: '8px', md: '9px' },
                   display: 'block',
                   mt: 0.2,
+                  textShadow: '0 1px 2px rgba(0,0,0,0.5)',
                 }}
               >
                 Current Bet: ${current_bet}

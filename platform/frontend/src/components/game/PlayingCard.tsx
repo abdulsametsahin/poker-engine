@@ -19,7 +19,27 @@ export const PlayingCard: React.FC<PlayingCardProps> = memo(({
   dealAnimation = false,
 }) => {
   const parsedCard = parseCard(card);
-  const { width, height, fontSize } = GAME.CARD_SIZES[size];
+  
+  // Responsive card sizes
+  const cardSizes = {
+    small: { 
+      width: { xs: 28, sm: 30, md: 32 },
+      height: { xs: 42, sm: 45, md: 48 },
+      fontSize: { xs: 9, sm: 10, md: 11 }
+    },
+    medium: { 
+      width: { xs: 42, sm: 46, md: 50 },
+      height: { xs: 60, sm: 66, md: 72 },
+      fontSize: { xs: 13, sm: 14, md: 16 }
+    },
+    large: { 
+      width: { xs: 55, sm: 60, md: 65 },
+      height: { xs: 78, sm: 85, md: 92 },
+      fontSize: { xs: 17, sm: 18, md: 20 }
+    },
+  };
+  
+  const { width, height, fontSize } = cardSizes[size];
 
   if (faceDown) {
     return (
@@ -139,7 +159,7 @@ export const PlayingCard: React.FC<PlayingCardProps> = memo(({
       {/* Top rank */}
       <Box
         sx={{
-          fontSize: size === 'small' ? fontSize * 0.9 : fontSize,
+          fontSize: fontSize,
           fontWeight: 900,
           color: suitColor,
           lineHeight: 1,
@@ -152,7 +172,7 @@ export const PlayingCard: React.FC<PlayingCardProps> = memo(({
       {/* Center suit */}
       <Box
         sx={{
-          fontSize: size === 'small' ? fontSize * 1.3 : fontSize * 1.5,
+          fontSize: fontSize,
           color: suitColor,
           lineHeight: 1,
           filter: 'drop-shadow(0 2px 3px rgba(0, 0, 0, 0.15))',
@@ -164,7 +184,7 @@ export const PlayingCard: React.FC<PlayingCardProps> = memo(({
       {/* Bottom rank */}
       <Box
         sx={{
-          fontSize: size === 'small' ? fontSize * 0.9 : fontSize,
+          fontSize: fontSize,
           fontWeight: 900,
           color: suitColor,
           lineHeight: 1,
