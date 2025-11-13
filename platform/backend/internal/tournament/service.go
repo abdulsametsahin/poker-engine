@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Service handles tournament operations
@@ -145,9 +146,13 @@ func (s *Service) RegisterPlayer(tournamentID, userID string) error {
 		}
 	}()
 
-	// Get tournament with lock
+	// CRITICAL: Get tournament with row-level lock to prevent race conditions
+	// Without FOR UPDATE, two concurrent registrations can both see available spots
+	// and exceed max_players or corrupt prize_pool calculations
 	var tournament models.Tournament
-	if err := tx.Clauses().Where("id = ?", tournamentID).First(&tournament).Error; err != nil {
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ?", tournamentID).
+		First(&tournament).Error; err != nil {
 		tx.Rollback()
 		if err == gorm.ErrRecordNotFound {
 			return ErrTournamentNotFound
