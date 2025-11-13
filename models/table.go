@@ -59,6 +59,9 @@ type CurrentHand struct {
 	CurrentBet         int          `json:"currentBet"`
 	MinRaise           int          `json:"minRaise"`
 	ActionDeadline     *time.Time   `json:"actionDeadline,omitempty"`
+	ActionSequence     uint64       `json:"actionSequence"`
+	LastActionPlayerID string       `json:"lastActionPlayerId,omitempty"`
+	LastActionTime     time.Time    `json:"lastActionTime,omitempty"`
 }
 
 type Winner struct {

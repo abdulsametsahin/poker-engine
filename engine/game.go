@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"log"
 	"poker-engine/models"
 	"sync"
 	"time"
@@ -196,6 +197,13 @@ func (g *Game) ProcessAction(playerID string, action models.PlayerAction, amount
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
+	// Log incoming action with full context for debugging
+	log.Printf("[ACTION_VALIDATE] player=%s action=%s amount=%d round=%s position=%d sequence=%d",
+		playerID, action, amount,
+		g.table.CurrentHand.BettingRound,
+		g.table.CurrentHand.CurrentPosition,
+		g.table.CurrentHand.ActionSequence)
+
 	if g.table == nil {
 		return fmt.Errorf("game table is nil")
 	}
@@ -217,15 +225,15 @@ func (g *Game) ProcessAction(playerID string, action models.PlayerAction, amount
 		return fmt.Errorf("player not found")
 	}
 
-	currentPlayer := g.table.Players[g.table.CurrentHand.CurrentPosition]
-	if currentPlayer == nil || currentPlayer.PlayerID != playerID {
-		return fmt.Errorf("not your turn")
+	// Use comprehensive turn validator
+	turnValidator := NewTurnValidator(g.table)
+	if err := turnValidator.ValidateTurn(playerID); err != nil {
+		log.Printf("[ACTION_REJECTED] player=%s reason=%v", playerID, err)
+		return err
 	}
 
-	// Check if player has already acted this turn
-	if player.HasActedThisRound {
-		return fmt.Errorf("you have already acted this turn")
-	}
+	log.Printf("[ACTION_ACCEPTED] player=%s action=%s seq=%d",
+		playerID, action, g.table.CurrentHand.ActionSequence)
 
 	g.stopActionTimer()
 
@@ -236,7 +244,11 @@ func (g *Game) ProcessAction(playerID string, action models.PlayerAction, amount
 		return err
 	}
 
+	// Update action tracking fields
 	player.HasActedThisRound = true
+	g.table.CurrentHand.ActionSequence++
+	g.table.CurrentHand.LastActionPlayerID = playerID
+	g.table.CurrentHand.LastActionTime = time.Now()
 
 	// Fire playerAction event to notify clients
 	if g.onEvent != nil {
@@ -277,8 +289,16 @@ func (g *Game) executeAction(processor *ActionProcessor, player *models.Player, 
 }
 
 func (g *Game) moveToNextPlayer() {
+	oldPosition := g.table.CurrentHand.CurrentPosition
 	positionFinder := NewPositionFinder(g.table.Players)
 	g.table.CurrentHand.CurrentPosition = positionFinder.findNextActive(g.table.CurrentHand.CurrentPosition)
+
+	if g.table.Players[g.table.CurrentHand.CurrentPosition] != nil {
+		log.Printf("[TURN_ADVANCE] Turn advanced from position %d to %d, player: %s",
+			oldPosition, g.table.CurrentHand.CurrentPosition,
+			g.table.Players[g.table.CurrentHand.CurrentPosition].PlayerID)
+	}
+
 	g.startActionTimer()
 }
 
@@ -286,6 +306,12 @@ func (g *Game) advanceToNextRound() {
 	if g.potCalculator == nil {
 		g.potCalculator = NewPotCalculator()
 	}
+
+	// Store last actor BEFORE resetting flags (important for heads-up edge case)
+	lastActor := g.table.CurrentHand.LastActionPlayerID
+	currentRound := g.table.CurrentHand.BettingRound
+
+	log.Printf("[ROUND_ADVANCE] Advancing from %s, last actor: %s", currentRound, lastActor)
 
 	// Only recalculate pot if there were bets in this round
 	hasBets := false
@@ -300,6 +326,7 @@ func (g *Game) advanceToNextRound() {
 		g.table.CurrentHand.Pot = g.potCalculator.CalculatePots(g.table.Players)
 	}
 
+	// Reset HasActedThisRound flags for all players
 	resetPlayersForNewRound(g.table.Players)
 
 	g.table.CurrentHand.CurrentBet = 0
@@ -340,7 +367,24 @@ func (g *Game) advanceToNextRound() {
 	playersWhoCanAct := countPlayers(g.table.Players, canAct)
 	if playersWhoCanAct > 1 {
 		positionFinder := NewPositionFinder(g.table.Players)
-		g.table.CurrentHand.CurrentPosition = positionFinder.findNextActive(g.table.CurrentHand.DealerPosition)
+		newPosition := positionFinder.findNextActive(g.table.CurrentHand.DealerPosition)
+
+		// Log if same player is acting first in new round (common in heads-up)
+		if g.table.Players[newPosition] != nil && g.table.Players[newPosition].PlayerID == lastActor {
+			log.Printf("[ROUND_ADVANCE] WARNING: Same player (%s) acting first in new round %s (normal for heads-up)",
+				lastActor, g.table.CurrentHand.BettingRound)
+			// Keep LastActionPlayerID set so 100ms anti-spam kicks in
+			g.table.CurrentHand.LastActionPlayerID = lastActor
+		} else {
+			// Different player, clear last action tracking
+			g.table.CurrentHand.LastActionPlayerID = ""
+		}
+
+		g.table.CurrentHand.CurrentPosition = newPosition
+		log.Printf("[ROUND_ADVANCE] New round %s, current position: %d, player: %s",
+			g.table.CurrentHand.BettingRound, newPosition,
+			g.table.Players[newPosition].PlayerID)
+
 		g.startActionTimer()
 	}
 }
