@@ -1,6 +1,5 @@
 import React, { memo } from 'react';
 import { Box, Stack, Typography } from '@mui/material';
-import { Badge } from '../common/Badge';
 import { PlayingCard } from './PlayingCard';
 import ActionTimer from '../ActionTimer';
 import { COLORS, TRANSITIONS, RADIUS } from '../../constants';
@@ -58,8 +57,6 @@ export const PlayerSeat: React.FC<PlayerSeatProps> = memo(({
       </Box>
     );
   }
-
-  const status = player.folded ? 'folded' : player.all_in ? 'all_in' : 'active';
 
   return (
     <Box

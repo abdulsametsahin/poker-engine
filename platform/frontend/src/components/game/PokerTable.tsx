@@ -6,7 +6,7 @@ import { ShowdownDisplay } from './ShowdownDisplay';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { OvalTableSVG } from './OvalTableSVG';
 import { DealerButton } from './DealerButton';
-import { COLORS, RADIUS, SPACING, TRANSITIONS } from '../../constants';
+import { COLORS, RADIUS } from '../../constants';
 import { Player, WinnerInfo } from '../../types';
 import { getBettingRoundName } from '../../utils';
 

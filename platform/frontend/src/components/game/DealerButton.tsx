@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, Typography } from '@mui/material';
-import { COLORS, TRANSITIONS } from '../../constants';
+import { TRANSITIONS } from '../../constants';
 
 interface DealerButtonProps {
   position: {
