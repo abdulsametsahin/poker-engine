@@ -244,7 +244,7 @@ export const PokerTable: React.FC<PokerTableProps> = memo(({
               <PlayingCard
                 key={idx}
                 card={card}
-                size="small"
+                size="medium"
                 dealAnimation={idx >= 0} // All cards have deal animation
               />
             ))}
