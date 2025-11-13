@@ -181,10 +181,12 @@ func (s *Service) RegisterPlayer(tournamentID, userID string) error {
 	}
 
 	// Deduct buy-in from user using currency service (with validation and audit trail)
+	// CRITICAL: Use DeductChipsWithTx to ensure buy-in deduction is atomic with registration
 	ctx := context.Background()
 	description := fmt.Sprintf("Buy-in for tournament: %s", tournament.Name)
-	if err := s.currencyService.DeductChips(
+	if err := s.currencyService.DeductChipsWithTx(
 		ctx,
+		tx,
 		userID,
 		tournament.BuyIn,
 		currency.TxTypeTournamentBuyIn,
@@ -279,10 +281,12 @@ func (s *Service) UnregisterPlayer(tournamentID, userID string) error {
 	}
 
 	// Refund buy-in to user using currency service (with audit trail)
+	// CRITICAL: Use AddChipsWithTx to ensure refund is atomic with unregistration
 	ctx := context.Background()
 	description := fmt.Sprintf("Refund for tournament: %s", tournament.Name)
-	if err := s.currencyService.AddChips(
+	if err := s.currencyService.AddChipsWithTx(
 		ctx,
+		tx,
 		userID,
 		tournament.BuyIn,
 		currency.TxTypeTournamentRefund,
@@ -366,11 +370,13 @@ func (s *Service) CancelTournament(tournamentID, userID string) error {
 	}
 
 	// Refund all players using currency service (with audit trail)
+	// CRITICAL: Use AddChipsWithTx to ensure all refunds are atomic with tournament cancellation
 	ctx := context.Background()
 	for _, player := range players {
 		description := fmt.Sprintf("Refund from cancelled tournament: %s", tournament.Name)
-		if err := s.currencyService.AddChips(
+		if err := s.currencyService.AddChipsWithTx(
 			ctx,
+			tx,
 			player.UserID,
 			tournament.BuyIn,
 			currency.TxTypeTournamentRefund,

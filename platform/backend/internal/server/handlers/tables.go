@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // HandleGetTables returns all available tables
@@ -305,20 +307,35 @@ func HandleJoinTable(
 
 	seatNumber := int(currentPlayers)
 
-	tableSeat := models.TableSeat{
-		TableID:    tableID,
-		UserID:     userID,
-		SeatNumber: seatNumber,
-		Chips:      buyIn.BuyIn,
-		Status:     "active",
-	}
+	// CRITICAL: Use transaction to ensure atomic operations
+	// If chip deduction fails, table seat creation is rolled back
+	// If table seat creation fails, chip deduction is rolled back
+	err := database.Transaction(func(tx *gorm.DB) error {
+		// Create table seat record
+		tableSeat := models.TableSeat{
+			TableID:    tableID,
+			UserID:     userID,
+			SeatNumber: seatNumber,
+			Chips:      buyIn.BuyIn,
+			Status:     "active",
+		}
 
-	if err := database.Create(&tableSeat).Error; err != nil {
+		if err := tx.Create(&tableSeat).Error; err != nil {
+			return fmt.Errorf("failed to create table seat: %w", err)
+		}
+
+		// Deduct chips from user (atomic with seat creation)
+		if err := tx.Model(&models.User{}).Where("id = ?", userID).Update("chips", user.Chips-buyIn.BuyIn).Error; err != nil {
+			return fmt.Errorf("failed to deduct chips: %w", err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to join table"})
 		return
 	}
-
-	database.Model(&models.User{}).Where("id = ?", userID).Update("chips", user.Chips-buyIn.BuyIn)
 
 	addPlayerFunc(tableID, userID, user.Username, seatNumber, buyIn.BuyIn)
 

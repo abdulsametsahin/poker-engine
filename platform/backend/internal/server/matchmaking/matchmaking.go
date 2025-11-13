@@ -13,6 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // MatchmakingQueueEntry represents an entry in the matchmaking queue
@@ -242,24 +243,45 @@ func ProcessMatchmaking(
 	// Add players to table
 	buyIn := preset.MinBuyIn
 	for i, player := range players {
-		seat := models.TableSeat{
-			TableID:    tableID,
-			UserID:     player.UserID,
-			SeatNumber: i,
-			Chips:      buyIn,
-			Status:     "active",
+		// CRITICAL: Use transaction to ensure atomic operations
+		// If chip deduction fails, seat creation is rolled back
+		// If seat creation fails, chip deduction is rolled back
+		err := database.Transaction(func(tx *gorm.DB) error {
+			seat := models.TableSeat{
+				TableID:    tableID,
+				UserID:     player.UserID,
+				SeatNumber: i,
+				Chips:      buyIn,
+				Status:     "active",
+			}
+			if err := tx.Create(&seat).Error; err != nil {
+				return fmt.Errorf("failed to create seat: %w", err)
+			}
+
+			now := time.Now()
+			if err := tx.Model(&models.MatchmakingEntry{}).
+				Where("user_id = ? AND status = ?", player.UserID, "waiting").
+				Updates(map[string]interface{}{
+					"status":     "matched",
+					"matched_at": &now,
+				}).Error; err != nil {
+				return fmt.Errorf("failed to update matchmaking entry: %w", err)
+			}
+
+			// Deduct chips from user (atomic with seat creation)
+			if err := tx.Model(&models.User{}).
+				Where("id = ?", player.UserID).
+				UpdateColumn("chips", tx.Raw("chips - ?", buyIn)).Error; err != nil {
+				return fmt.Errorf("failed to deduct chips: %w", err)
+			}
+
+			return nil
+		})
+
+		if err != nil {
+			log.Printf("Failed to add player %s to matchmaking table: %v", player.UserID, err)
+			continue
 		}
-		database.Create(&seat)
-
-		now := time.Now()
-		database.Model(&models.MatchmakingEntry{}).
-			Where("user_id = ? AND status = ?", player.UserID, "waiting").
-			Updates(map[string]interface{}{
-				"status":     "matched",
-				"matched_at": &now,
-			})
-
-		database.Model(&models.User{}).Where("id = ?", player.UserID).UpdateColumn("chips", database.Raw("chips - ?", buyIn))
 
 		addPlayerFunc(tableID, player.UserID, player.Username, i, buyIn)
 

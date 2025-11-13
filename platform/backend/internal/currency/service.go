@@ -163,6 +163,26 @@ func (s *Service) AddChips(ctx context.Context, userID string, amount int, txTyp
 	})
 }
 
+// DeductChipsWithTx removes chips using an existing transaction
+// CRITICAL: Use this when you need to coordinate chip deduction with other database operations
+// The caller is responsible for transaction management (Begin/Commit/Rollback)
+func (s *Service) DeductChipsWithTx(ctx context.Context, tx *gorm.DB, userID string, amount int, txType TransactionType, refID string, description string) error {
+	if err := s.ValidateAmount(amount); err != nil {
+		return err
+	}
+	return s.deductChipsInTx(ctx, tx, userID, amount, txType, refID, description)
+}
+
+// AddChipsWithTx adds chips using an existing transaction
+// CRITICAL: Use this when you need to coordinate chip addition with other database operations
+// The caller is responsible for transaction management (Begin/Commit/Rollback)
+func (s *Service) AddChipsWithTx(ctx context.Context, tx *gorm.DB, userID string, amount int, txType TransactionType, refID string, description string) error {
+	if err := s.ValidateAmount(amount); err != nil {
+		return err
+	}
+	return s.addChipsInTx(ctx, tx, userID, amount, txType, refID, description)
+}
+
 // TransferChips transfers chips from one user to another atomically
 // CRITICAL: Uses a single transaction to ensure atomicity - if either operation fails,
 // both are rolled back, preventing money loss or duplication

@@ -142,6 +142,7 @@ func (pd *PrizeDistributor) DistributePrizes(tournamentID string) error {
 	}
 
 	// Distribute each prize using currency service for atomic operations and audit trail
+	// CRITICAL: Use AddChipsWithTx to ensure prize distribution is atomic with tournament update
 	ctx := context.Background()
 	for _, prize := range prizes {
 		// Skip zero prizes
@@ -149,10 +150,11 @@ func (pd *PrizeDistributor) DistributePrizes(tournamentID string) error {
 			continue
 		}
 
-		// Add chips to user using currency service (with audit trail)
+		// Add chips to user using currency service (with audit trail and transaction)
 		description := fmt.Sprintf("Prize for position %d in tournament %s", prize.Position, tournament.Name)
-		if err := pd.currencyService.AddChips(
+		if err := pd.currencyService.AddChipsWithTx(
 			ctx,
+			tx,
 			prize.UserID,
 			prize.Amount,
 			currency.TxTypeTournamentPrize,

@@ -2,6 +2,7 @@ package game
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 
 	"poker-engine/engine"
 	pokerModels "poker-engine/models"
+	"gorm.io/gorm"
 )
 
 // TablePreset defines a predefined table configuration
@@ -184,25 +186,35 @@ func SyncFinalChipsOnGameComplete(bridge *GameBridge, database *db.DB, tableID s
 
 	state := table.GetState()
 
-	// Return remaining chips to user accounts
+	// CRITICAL: Use transaction to ensure atomic chip return and seat update
+	// If chip return fails, seat is not marked as left
+	// If seat update fails, chips are not returned
 	for _, player := range state.Players {
 		if player != nil && player.Chips > 0 {
-			// Add chips back to user account
-			err := database.Model(&models.User{}).
-				Where("id = ?", player.PlayerID).
-				UpdateColumn("chips", database.Raw("chips + ?", player.Chips)).Error
+			err := database.Transaction(func(tx *gorm.DB) error {
+				// Add chips back to user account
+				if err := tx.Model(&models.User{}).
+					Where("id = ?", player.PlayerID).
+					UpdateColumn("chips", tx.Raw("chips + ?", player.Chips)).Error; err != nil {
+					return fmt.Errorf("failed to return chips: %w", err)
+				}
+
+				// Mark seat as left (atomic with chip return)
+				now := time.Now()
+				if err := tx.Model(&models.TableSeat{}).
+					Where("table_id = ? AND user_id = ? AND left_at IS NULL", tableID, player.PlayerID).
+					Update("left_at", &now).Error; err != nil {
+					return fmt.Errorf("failed to update seat: %w", err)
+				}
+
+				return nil
+			})
 
 			if err != nil {
-				log.Printf("Failed to return chips to user %s: %v", player.PlayerID, err)
+				log.Printf("Failed to process final chips for user %s: %v", player.PlayerID, err)
 			} else {
 				log.Printf("Returned %d chips to user %s", player.Chips, player.PlayerID)
 			}
-
-			// Mark seat as left
-			now := time.Now()
-			database.Model(&models.TableSeat{}).
-				Where("table_id = ? AND user_id = ? AND left_at IS NULL", tableID, player.PlayerID).
-				Update("left_at", &now)
 		}
 	}
 }
