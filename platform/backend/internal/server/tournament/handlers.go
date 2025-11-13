@@ -13,6 +13,7 @@ import (
 	"poker-platform/backend/internal/models"
 	"poker-platform/backend/internal/server/game"
 	"poker-platform/backend/internal/tournament"
+	"poker-platform/backend/internal/validation"
 
 	"poker-engine/engine"
 	pokerModels "poker-engine/models"
@@ -27,6 +28,38 @@ func HandleCreateTournament(c *gin.Context, tournamentService *tournament.Servic
 	var req models.CreateTournamentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request", "details": err.Error()})
+		return
+	}
+
+	// CRITICAL: Validate all tournament parameters
+	if err := validation.ValidateTournamentName(req.Name); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := validation.ValidateBuyIn(req.BuyIn); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := validation.ValidateStartingChips(req.StartingChips); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := validation.ValidateTournamentPlayers(req.MinPlayers, req.MaxPlayers); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := validation.ValidateNonNegativeInt(req.AutoStartDelay, "auto start delay"); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validate auto start delay is reasonable (max 1 hour = 3600 seconds)
+	if req.AutoStartDelay > 3600 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "auto start delay must be <= 3600 seconds"})
 		return
 	}
 
@@ -61,6 +94,12 @@ func HandleListTournaments(c *gin.Context, tournamentService *tournament.Service
 func HandleGetTournament(c *gin.Context, tournamentService *tournament.Service) {
 	tournamentID := c.Param("id")
 
+	// CRITICAL: Validate tournament ID format
+	if err := validation.ValidateUUID(tournamentID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid tournament ID"})
+		return
+	}
+
 	tourney, err := tournamentService.GetTournament(tournamentID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Tournament not found"})
@@ -73,6 +112,12 @@ func HandleGetTournament(c *gin.Context, tournamentService *tournament.Service) 
 // HandleGetTournamentByCode gets a tournament by its join code
 func HandleGetTournamentByCode(c *gin.Context, tournamentService *tournament.Service) {
 	code := c.Param("code")
+
+	// CRITICAL: Validate tournament code (should be alphanumeric, max 8 chars)
+	if err := validation.ValidateStringLength(code, 1, 8, "tournament code"); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	tourney, err := tournamentService.GetTournamentByCode(code)
 	if err != nil {
@@ -87,6 +132,12 @@ func HandleGetTournamentByCode(c *gin.Context, tournamentService *tournament.Ser
 func HandleRegisterTournament(c *gin.Context, tournamentService *tournament.Service, broadcastFunc func(string)) {
 	userID := c.GetString("user_id")
 	tournamentID := c.Param("id")
+
+	// CRITICAL: Validate tournament ID format
+	if err := validation.ValidateUUID(tournamentID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid tournament ID"})
+		return
+	}
 
 	if err := tournamentService.RegisterPlayer(tournamentID, userID); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

@@ -6,6 +6,7 @@ import (
 
 	"poker-platform/backend/internal/db"
 	"poker-platform/backend/internal/models"
+	"poker-platform/backend/internal/validation"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -188,14 +189,29 @@ func HandleCreateTable(
 		return
 	}
 
-	table.ID = uuid.New().String()
-	table.Status = "waiting"
-
-	if err := database.Create(&table).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create table"})
+	// CRITICAL: Validate all table parameters to prevent invalid game states
+	if err := validation.ValidateTableName(table.Name); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
+	if err := validation.ValidateBlinds(table.SmallBlind, table.BigBlind); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := validation.ValidateMaxPlayers(table.MaxPlayers); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validate game type enum
+	if err := validation.ValidateEnum(table.GameType, []string{"cash", "tournament"}, "game type"); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validate buy-in range
 	minBuyIn := 100
 	if table.MinBuyIn != nil {
 		minBuyIn = *table.MinBuyIn
@@ -203,6 +219,19 @@ func HandleCreateTable(
 	maxBuyIn := 2000
 	if table.MaxBuyIn != nil {
 		maxBuyIn = *table.MaxBuyIn
+	}
+
+	if err := validation.ValidateBuyInRange(minBuyIn, maxBuyIn); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	table.ID = uuid.New().String()
+	table.Status = "waiting"
+
+	if err := database.Create(&table).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create table"})
+		return
 	}
 
 	createEngineTableFunc(table.ID, table.GameType, table.SmallBlind, table.BigBlind, table.MaxPlayers, minBuyIn, maxBuyIn)
@@ -219,11 +248,23 @@ func HandleJoinTable(
 	tableID := c.Param("id")
 	userID := c.GetString("user_id")
 
+	// CRITICAL: Validate table ID format
+	if err := validation.ValidateUUID(tableID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid table ID"})
+		return
+	}
+
 	var buyIn struct {
 		BuyIn int `json:"buy_in"`
 	}
 	if err := c.ShouldBindJSON(&buyIn); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	// CRITICAL: Validate buy-in amount
+	if err := validation.ValidateBuyIn(buyIn.BuyIn); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -241,6 +282,16 @@ func HandleJoinTable(
 	var table models.Table
 	if err := database.Where("id = ?", tableID).First(&table).Error; err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Table not found"})
+		return
+	}
+
+	// Validate buy-in is within table limits
+	if table.MinBuyIn != nil && buyIn.BuyIn < *table.MinBuyIn {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Buy-in below table minimum"})
+		return
+	}
+	if table.MaxBuyIn != nil && buyIn.BuyIn > *table.MaxBuyIn {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Buy-in exceeds table maximum"})
 		return
 	}
 
