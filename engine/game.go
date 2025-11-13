@@ -158,7 +158,7 @@ func (g *Game) postBlind(player *models.Player, blindAmount int, isSmallBlind bo
 	}
 	player.Bet = amount
 	player.Chips -= amount
-	player.HasActedThisRound = isSmallBlind
+	player.HasActedThisRound = false
 }
 
 func (g *Game) initializeHand(dealerPos, sbPos, bbPos int) {
