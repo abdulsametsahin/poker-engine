@@ -68,7 +68,7 @@ export interface GameComplete {
 export type GameMode = 'heads_up' | '3_player' | '6_player';
 export type TableStatus = 'waiting' | 'playing' | 'completed';
 export type BettingRound = 'preflop' | 'flop' | 'turn' | 'river';
-export type PlayerAction = 'fold' | 'check' | 'call' | 'raise' | 'all_in';
+export type PlayerAction = 'fold' | 'check' | 'call' | 'raise' | 'allin';
 
 // API types
 export interface LoginRequest {
