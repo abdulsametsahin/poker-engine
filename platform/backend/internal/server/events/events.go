@@ -34,6 +34,7 @@ func HandleEngineEvent(
 		// Create hand record at the start of the hand
 		game.CreateHandRecord(bridge, database, tableID, event)
 		broadcastFunc(tableID)
+		return
 
 	case "handComplete":
 		log.Printf("[ENGINE_EVENT] Hand completed on table %s", tableID)
@@ -147,6 +148,12 @@ func HandleEngineEvent(
 	case "playerAction":
 		log.Printf("[ENGINE_EVENT] Player action completed on table %s", tableID)
 		broadcastFunc(tableID)
+		return
+
+	case "actionRequired":
+		log.Printf("[ENGINE_EVENT] Action required on table %s", tableID)
+		broadcastFunc(tableID)
+		return
 
 	case "roundAdvanced":
 		log.Printf("[ENGINE_EVENT] Betting round advanced on table %s", tableID)
@@ -164,11 +171,16 @@ func HandleEngineEvent(
 		}
 
 		broadcastFunc(tableID)
+		return
 
 	case "cardDealt":
 		// Don't broadcast on every card dealt to reduce message frequency
 		// The next playerAction or roundAdvanced will trigger a broadcast
 		log.Printf("[ENGINE_EVENT] Card dealt on table %s (skipping broadcast)", tableID)
+		return
+
+	default:
+		log.Printf("[ENGINE_EVENT] Unexpected event on table %s: %s - skipping", tableID, event.Event)
 	}
 }
 
