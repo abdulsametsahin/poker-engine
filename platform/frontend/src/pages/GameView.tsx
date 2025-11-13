@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Box, Stack, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, TextField, InputAdornment, Typography } from '@mui/material';
+import { Box, Stack, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Typography } from '@mui/material';
 import { ArrowBack, ExitToApp, Terminal, Pause } from '@mui/icons-material';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useWebSocket } from '../contexts/WebSocketContext';
@@ -12,7 +12,7 @@ import { TableSwitcher } from '../components/game/TableSwitcher';
 import { WinnerDisplay, HandCompleteDisplay, TournamentPausedModal } from '../components/modals';
 import { Button } from '../components/common/Button';
 import { Badge } from '../components/common/Badge';
-import { COLORS, RADIUS, SPACING, GAME } from '../constants';
+import { COLORS, RADIUS, GAME } from '../constants';
 import { Player, WSMessage } from '../types';
 import { addActiveTable, updateTableActivity, removeActiveTable } from '../utils/tableManager';
 
@@ -319,7 +319,8 @@ export const GameView: React.FC = () => {
       removeMessageHandler('tournament_paused');
       removeMessageHandler('tournament_resumed');
     };
-  }, [tableId, tableState?.status, tableState?.betting_round, tableState?.players, addMessageHandler, removeMessageHandler, showSuccess, showError, showWarning, addConsoleLog]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tableId, addMessageHandler, removeMessageHandler, showSuccess, showError, showWarning, addConsoleLog]);
 
   const handleAction = useCallback((action: string, amount?: number) => {
     const amountStr = amount ? ` $${amount}` : '';
@@ -543,142 +544,354 @@ export const GameView: React.FC = () => {
       {tableState?.status === 'playing' && isMyTurn && (
         <Box
           sx={{
-            px: 3,
-            py: 1.5,
-            background: 'rgba(0, 0, 0, 0.6)',
-            backdropFilter: 'blur(10px)',
-            borderTop: `1px solid ${COLORS.border.main}`,
+            px: 4,
+            py: 3,
+            background: 'linear-gradient(180deg, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.95) 100%)',
+            backdropFilter: 'blur(20px)',
+            borderTop: `2px solid ${COLORS.primary.main}40`,
             position: 'relative',
             zIndex: 10,
+            boxShadow: '0 -8px 32px rgba(0, 0, 0, 0.5)',
+            
+            // Animated glow effect on top border
+            '&::before': {
+              content: '""',
+              position: 'absolute',
+              top: -2,
+              left: 0,
+              right: 0,
+              height: 2,
+              background: `linear-gradient(90deg, 
+                transparent 0%, 
+                ${COLORS.primary.main}80 20%, 
+                ${COLORS.primary.main} 50%, 
+                ${COLORS.primary.main}80 80%, 
+                transparent 100%)`,
+              animation: 'borderGlow 3s ease-in-out infinite',
+            },
+            
+            '@keyframes borderGlow': {
+              '0%, 100%': { opacity: 0.6 },
+              '50%': { opacity: 1 },
+            },
           }}
         >
-          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-            {/* Primary action buttons */}
-            <Button
-              variant="danger"
-              onClick={() => handleAction('fold')}
-              sx={{
-                minWidth: 70,
-                height: 36,
-                fontSize: '12px',
-                px: 2,
-              }}
-            >
-              FOLD
-            </Button>
-
-            <Button
-              variant="secondary"
-              onClick={() => handleAction('check')}
-              disabled={currentBet > playerBet}
-              sx={{
-                minWidth: 70,
-                height: 36,
-                fontSize: '12px',
-                px: 2,
-              }}
-            >
-              CHECK
-            </Button>
-
-            <Button
-              variant="success"
-              onClick={() => handleAction('call')}
-              disabled={callAmount <= 0}
-              sx={{
-                minWidth: 70,
-                height: 36,
-                fontSize: '12px',
-                px: 2,
-              }}
-            >
-              CALL {callAmount > 0 && `$${callAmount}`}
-            </Button>
-
-            {/* Divider */}
-            <Box sx={{ width: 1, height: 24, bgcolor: COLORS.border.main, mx: 0.5 }} />
-
-            {/* Raise amount input - compact and on the left */}
-            <TextField
-              type="number"
-              value={raiseAmount}
-              onChange={(e) => setRaiseAmount(Number(e.target.value))}
-              InputProps={{
-                startAdornment: <InputAdornment position="start" sx={{ mr: 0.5 }}>$</InputAdornment>,
-              }}
-              inputProps={{
-                min: minRaiseAmount,
-                max: maxRaiseAmount,
-                step: 10,
-              }}
-              size="small"
-              sx={{
-                width: 100,
-                '& .MuiOutlinedInput-root': {
-                  height: 36,
-                  color: COLORS.text.primary,
-                  fontSize: '13px',
-                  '& fieldset': {
-                    borderColor: COLORS.border.main,
+          <Stack spacing={2.5}>
+            {/* Top row: Basic actions */}
+            <Stack direction="row" spacing={2} alignItems="center" justifyContent="center">
+              {/* Fold button - Danger style */}
+              <Button
+                variant="danger"
+                onClick={() => handleAction('fold')}
+                sx={{
+                  minWidth: 120,
+                  height: 48,
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  px: 3,
+                  borderRadius: RADIUS.md,
+                  boxShadow: `0 4px 12px ${COLORS.danger.main}40`,
+                  transition: 'all 0.3s ease',
+                  '&:hover': {
+                    transform: 'translateY(-2px)',
+                    boxShadow: `0 6px 16px ${COLORS.danger.main}60`,
                   },
-                  '&:hover fieldset': {
-                    borderColor: COLORS.primary.main,
+                  '&:active': {
+                    transform: 'translateY(0)',
                   },
-                  '&.Mui-focused fieldset': {
-                    borderColor: COLORS.primary.main,
+                }}
+              >
+                FOLD
+              </Button>
+
+              {/* Check/Call buttons */}
+              {currentBet <= playerBet ? (
+                <Button
+                  variant="secondary"
+                  onClick={() => handleAction('check')}
+                  sx={{
+                    minWidth: 120,
+                    height: 48,
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    px: 3,
+                    borderRadius: RADIUS.md,
+                    transition: 'all 0.3s ease',
+                    '&:hover': {
+                      transform: 'translateY(-2px)',
+                    },
+                    '&:active': {
+                      transform: 'translateY(0)',
+                    },
+                  }}
+                >
+                  CHECK
+                </Button>
+              ) : (
+                <Button
+                  variant="success"
+                  onClick={() => handleAction('call')}
+                  sx={{
+                    minWidth: 140,
+                    height: 48,
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    px: 3,
+                    borderRadius: RADIUS.md,
+                    boxShadow: `0 4px 12px ${COLORS.success.main}40`,
+                    transition: 'all 0.3s ease',
+                    '&:hover': {
+                      transform: 'translateY(-2px)',
+                      boxShadow: `0 6px 16px ${COLORS.success.main}60`,
+                    },
+                    '&:active': {
+                      transform: 'translateY(0)',
+                    },
+                  }}
+                >
+                  <Stack direction="row" alignItems="center" spacing={1}>
+                    <span>CALL</span>
+                    <Box
+                      sx={{
+                        px: 1.5,
+                        py: 0.5,
+                        borderRadius: RADIUS.sm,
+                        background: 'rgba(255, 255, 255, 0.2)',
+                        fontSize: '13px',
+                        fontWeight: 700,
+                      }}
+                    >
+                      ${callAmount}
+                    </Box>
+                  </Stack>
+                </Button>
+              )}
+
+              {/* All-in button - Prominent */}
+              <Button
+                variant="warning"
+                onClick={() => handleAction('allin')}
+                sx={{
+                  minWidth: 140,
+                  height: 48,
+                  fontSize: '14px',
+                  fontWeight: 700,
+                  px: 3,
+                  borderRadius: RADIUS.md,
+                  background: `linear-gradient(135deg, ${COLORS.warning.main} 0%, ${COLORS.warning.dark} 100%)`,
+                  boxShadow: `0 4px 12px ${COLORS.warning.main}50`,
+                  position: 'relative',
+                  overflow: 'hidden',
+                  transition: 'all 0.3s ease',
+                  
+                  // Animated shine effect
+                  '&::before': {
+                    content: '""',
+                    position: 'absolute',
+                    top: 0,
+                    left: '-100%',
+                    width: '100%',
+                    height: '100%',
+                    background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent)',
+                    animation: 'shine 3s infinite',
                   },
-                },
-                '& input': {
-                  py: 0.75,
-                  px: 1,
-                },
-              }}
-            />
+                  
+                  '&:hover': {
+                    transform: 'translateY(-2px)',
+                    boxShadow: `0 6px 16px ${COLORS.warning.main}70`,
+                    background: `linear-gradient(135deg, ${COLORS.warning.light} 0%, ${COLORS.warning.main} 100%)`,
+                  },
+                  '&:active': {
+                    transform: 'translateY(0)',
+                  },
+                  
+                  '@keyframes shine': {
+                    '0%': { left: '-100%' },
+                    '50%, 100%': { left: '200%' },
+                  },
+                }}
+              >
+                <Stack direction="row" alignItems="center" spacing={1}>
+                  <span>ALL IN</span>
+                  <Box
+                    sx={{
+                      px: 1.5,
+                      py: 0.5,
+                      borderRadius: RADIUS.sm,
+                      background: 'rgba(0, 0, 0, 0.3)',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                    }}
+                  >
+                    ${maxRaiseAmount}
+                  </Box>
+                </Stack>
+              </Button>
+            </Stack>
 
-            {/* Raise button */}
-            <Button
-              variant="primary"
-              onClick={() => handleAction('raise', raiseAmount)}
-              disabled={raiseAmount < minRaiseAmount}
+            {/* Bottom row: Raise controls */}
+            <Box
               sx={{
-                minWidth: 70,
-                height: 36,
-                fontSize: '12px',
-                px: 2,
+                p: 2.5,
+                borderRadius: RADIUS.md,
+                background: 'rgba(124, 58, 237, 0.08)',
+                border: `1px solid ${COLORS.primary.main}30`,
               }}
             >
-              RAISE
-            </Button>
+              <Stack spacing={2}>
+                {/* Raise amount display and slider */}
+                <Stack direction="row" spacing={3} alignItems="center">
+                  <Typography
+                    sx={{
+                      color: COLORS.text.secondary,
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      minWidth: 80,
+                    }}
+                  >
+                    RAISE TO
+                  </Typography>
 
-            {/* All-in button */}
-            <Button
-              variant="warning"
-              onClick={() => handleAction('allin')}
-              sx={{
-                minWidth: 70,
-                height: 36,
-                fontSize: '12px',
-                px: 2,
-                background: `linear-gradient(135deg, ${COLORS.warning.main} 0%, ${COLORS.warning.dark} 100%)`,
-                '&:hover': {
-                  background: `linear-gradient(135deg, ${COLORS.warning.light} 0%, ${COLORS.warning.main} 100%)`,
-                },
-              }}
-            >
-              ALL-IN
-            </Button>
+                  {/* Custom amount input */}
+                  <Box
+                    sx={{
+                      px: 2,
+                      py: 1,
+                      borderRadius: RADIUS.md,
+                      background: 'rgba(0, 0, 0, 0.5)',
+                      border: `1px solid ${COLORS.primary.main}40`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      minWidth: 140,
+                    }}
+                  >
+                    <Typography
+                      sx={{
+                        color: COLORS.text.secondary,
+                        fontSize: '16px',
+                        mr: 1,
+                      }}
+                    >
+                      $
+                    </Typography>
+                    <input
+                      type="number"
+                      value={raiseAmount}
+                      onChange={(e) => setRaiseAmount(Number(e.target.value))}
+                      min={minRaiseAmount}
+                      max={maxRaiseAmount}
+                      step={10}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        outline: 'none',
+                        color: COLORS.text.primary,
+                        fontSize: '20px',
+                        fontWeight: 700,
+                        width: '100%',
+                        fontFamily: 'inherit',
+                      }}
+                    />
+                  </Box>
 
-            {/* Helper text */}
-            <Typography
-              variant="caption"
-              sx={{
-                color: COLORS.text.secondary,
-                fontSize: '10px',
-                ml: 2,
-              }}
-            >
-              Min: ${minRaiseAmount} • Max: ${maxRaiseAmount}
-            </Typography>
+                  {/* Quick bet buttons */}
+                  <Stack direction="row" spacing={1} flex={1}>
+                    {[
+                      { label: 'MIN', value: minRaiseAmount },
+                      { label: '½ POT', value: Math.min(Math.floor((tableState?.pot || 0) * 0.5), maxRaiseAmount) },
+                      { label: 'POT', value: Math.min((tableState?.pot || 0), maxRaiseAmount) },
+                      { label: 'MAX', value: maxRaiseAmount },
+                    ].map((bet) => (
+                      <Button
+                        key={bet.label}
+                        variant="ghost"
+                        onClick={() => setRaiseAmount(bet.value)}
+                        sx={{
+                          minWidth: 0,
+                          height: 36,
+                          px: 2,
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          borderRadius: RADIUS.sm,
+                          border: `1px solid ${COLORS.primary.main}40`,
+                          background: raiseAmount === bet.value ? `${COLORS.primary.main}30` : 'transparent',
+                          color: raiseAmount === bet.value ? COLORS.primary.light : COLORS.text.secondary,
+                          transition: 'all 0.2s ease',
+                          '&:hover': {
+                            background: `${COLORS.primary.main}20`,
+                            borderColor: COLORS.primary.main,
+                            color: COLORS.primary.light,
+                          },
+                        }}
+                      >
+                        {bet.label}
+                      </Button>
+                    ))}
+                  </Stack>
+
+                  {/* Raise action button */}
+                  <Button
+                    variant="primary"
+                    onClick={() => handleAction('raise', raiseAmount)}
+                    disabled={raiseAmount < minRaiseAmount || raiseAmount > maxRaiseAmount}
+                    sx={{
+                      minWidth: 120,
+                      height: 48,
+                      fontSize: '14px',
+                      fontWeight: 700,
+                      px: 3,
+                      borderRadius: RADIUS.md,
+                      boxShadow: `0 4px 12px ${COLORS.primary.main}40`,
+                      transition: 'all 0.3s ease',
+                      '&:hover:not(:disabled)': {
+                        transform: 'translateY(-2px)',
+                        boxShadow: `0 6px 16px ${COLORS.primary.main}60`,
+                      },
+                      '&:active:not(:disabled)': {
+                        transform: 'translateY(0)',
+                      },
+                      '&:disabled': {
+                        opacity: 0.4,
+                        cursor: 'not-allowed',
+                      },
+                    }}
+                  >
+                    RAISE
+                  </Button>
+                </Stack>
+
+                {/* Range info */}
+                <Stack direction="row" justifyContent="space-between" alignItems="center">
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: COLORS.text.secondary,
+                      fontSize: '11px',
+                    }}
+                  >
+                    Min: <strong style={{ color: COLORS.text.primary }}>${minRaiseAmount}</strong>
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: COLORS.text.secondary,
+                      fontSize: '11px',
+                    }}
+                  >
+                    Your chips: <strong style={{ color: COLORS.primary.light }}>${currentPlayer?.chips || 0}</strong>
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: COLORS.text.secondary,
+                      fontSize: '11px',
+                    }}
+                  >
+                    Max: <strong style={{ color: COLORS.text.primary }}>${maxRaiseAmount}</strong>
+                  </Typography>
+                </Stack>
+              </Stack>
+            </Box>
           </Stack>
         </Box>
       )}

@@ -161,6 +161,10 @@ func HandleTournamentEngineEvent(
 							}
 						}
 					}
+
+					// Complete the tournament table now that only 1 active player remains
+					log.Printf("[TOURNAMENT] Completing tournament table %s with 1 active player", tableID)
+					HandleTournamentTableComplete(tableID, event, database, bridge)
 				} else if activeCount == 0 {
 					// No active players - all sitting out
 					log.Printf("[TOURNAMENT] No active players remaining on table %s", tableID)

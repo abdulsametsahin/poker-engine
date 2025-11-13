@@ -336,9 +336,13 @@ func (g *Game) advanceToNextRound() {
 		})
 	}
 
-	positionFinder := NewPositionFinder(g.table.Players)
-	g.table.CurrentHand.CurrentPosition = positionFinder.findNextActive(g.table.CurrentHand.DealerPosition)
-	g.startActionTimer()
+	// Only set position and start timer if there are players who can still act
+	playersWhoCanAct := countPlayers(g.table.Players, canAct)
+	if playersWhoCanAct > 1 {
+		positionFinder := NewPositionFinder(g.table.Players)
+		g.table.CurrentHand.CurrentPosition = positionFinder.findNextActive(g.table.CurrentHand.DealerPosition)
+		g.startActionTimer()
+	}
 }
 
 func (g *Game) dealAllRemainingCards() {
