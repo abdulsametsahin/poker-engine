@@ -184,14 +184,22 @@ func HandleEngineEvent(
 	}
 }
 
-// ProcessGameAction processes a game action from a player
+// ProcessGameAction processes a game action from a player with idempotency support
 func ProcessGameAction(
-	userID, tableID, action string,
+	userID, tableID, action, requestID string,
 	amount int,
 	database *db.DB,
 	bridge *game.GameBridge,
 ) {
-	log.Printf("[ACTION] Processing: user=%s table=%s action=%s amount=%d", userID, tableID, action, amount)
+	// Check for duplicate request (idempotency)
+	if bridge.ActionTracker.IsDuplicate(requestID, userID) {
+		log.Printf("[ACTION] DUPLICATE: request_id=%s user=%s table=%s action=%s - IGNORED",
+			requestID, userID, tableID, action)
+		return
+	}
+
+	log.Printf("[ACTION] Processing: user=%s table=%s action=%s amount=%d request_id=%s",
+		userID, tableID, action, amount, requestID)
 
 	bridge.Mu.RLock()
 	table, exists := bridge.Tables[tableID]
@@ -233,7 +241,11 @@ func ProcessGameAction(
 	if err != nil {
 		log.Printf("[ACTION] ERROR: Failed to process action for user=%s table=%s: %v", userID, tableID, err)
 	} else {
-		log.Printf("[ACTION] SUCCESS: Action %s processed for user=%s table=%s", action, userID, tableID)
+		// Mark as processed AFTER successful action
+		bridge.ActionTracker.MarkProcessed(requestID, userID, tableID, action, amount)
+
+		log.Printf("[ACTION] SUCCESS: Action %s processed for user=%s table=%s request_id=%s",
+			action, userID, tableID, requestID)
 
 		// Save action to database if we have a current hand ID
 		bridge.Mu.RLock()

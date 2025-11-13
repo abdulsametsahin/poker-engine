@@ -253,6 +253,7 @@ func BroadcastTableState(
 			var currentTurn *string
 			bettingRound := ""
 			currentBet := 0
+			var actionSequence uint64
 
 			// Only access CurrentHand if it exists
 			if state.CurrentHand != nil {
@@ -266,6 +267,7 @@ func BroadcastTableState(
 
 				bettingRound = string(state.CurrentHand.BettingRound)
 				currentBet = state.CurrentHand.CurrentBet
+				actionSequence = state.CurrentHand.ActionSequence
 
 				if state.CurrentHand.CurrentPosition >= 0 && state.CurrentHand.CurrentPosition < len(state.Players) {
 					if currentPlayer := state.Players[state.CurrentHand.CurrentPosition]; currentPlayer != nil {
@@ -283,6 +285,7 @@ func BroadcastTableState(
 				"status":          string(state.Status),
 				"betting_round":   bettingRound,
 				"current_bet":     currentBet,
+				"action_sequence": actionSequence,
 			}
 
 			// Add action deadline if there's an active player

@@ -291,7 +291,12 @@ func handleWSMessageWrapper(c *websocket.Client, msg websocket.WSMessage) {
 		if a, ok := payload["amount"].(float64); ok {
 			amount = int(a)
 		}
-		events.ProcessGameAction(c.UserID, c.TableID, action, amount, appConfig.Database, bridge)
+		// Extract request_id for idempotency (optional for backward compatibility)
+		requestID := ""
+		if rid, ok := payload["request_id"].(string); ok {
+			requestID = rid
+		}
+		events.ProcessGameAction(c.UserID, c.TableID, action, requestID, amount, appConfig.Database, bridge)
 
 	case "ping":
 		websocket.SendToClient(c, websocket.WSMessage{Type: "pong"})
