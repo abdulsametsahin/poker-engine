@@ -189,7 +189,7 @@ export const getActionColor = (action: string): string => {
     check: '#3B82F6',
     call: '#10B981',
     raise: '#7C3AED',
-    all_in: '#F59E0B',
+    allin: '#F59E0B',
   };
   return colors[action] || '#A3A3A3';
 };

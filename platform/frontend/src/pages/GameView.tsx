@@ -165,6 +165,7 @@ export const GameView: React.FC = () => {
         current_bet: message.payload.current_bet,
         action_deadline: message.payload.action_deadline,
         winners: message.payload.winners,
+        is_tournament: message.payload.is_tournament,
       };
 
       // Track player actions and add to history
