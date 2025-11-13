@@ -37,6 +37,7 @@ func HandleTournamentEngineEvent(
 		// Create hand record at the start of the hand
 		game.CreateHandRecord(bridge, database, tableID, event)
 		broadcastFunc(tableID)
+		return
 
 	case "handComplete":
 		log.Printf("[ENGINE_EVENT] Hand completed on tournament table %s", tableID)
@@ -193,10 +194,17 @@ func HandleTournamentEngineEvent(
 	case "gameComplete":
 		log.Printf("[ENGINE_EVENT] Game complete on tournament table %s", tableID)
 		HandleTournamentTableComplete(tableID, event, database, bridge)
+		return
 
 	case "playerAction":
 		log.Printf("[ENGINE_EVENT] Player action completed on tournament table %s", tableID)
 		broadcastFunc(tableID)
+		return
+
+	case "actionRequired":
+		log.Printf("[ENGINE_EVENT] Action required on tournament table %s", tableID)
+		broadcastFunc(tableID)
+		return
 
 	case "roundAdvanced":
 		log.Printf("[ENGINE_EVENT] Betting round advanced on tournament table %s", tableID)
@@ -214,15 +222,17 @@ func HandleTournamentEngineEvent(
 		}
 
 		broadcastFunc(tableID)
+		return
 
 	case "cardDealt":
 		// Don't broadcast on every card dealt to reduce message frequency
 		log.Printf("[ENGINE_EVENT] Card dealt on tournament table %s (skipping broadcast)", tableID)
 		return
-	}
 
-	log.Printf("[ENGINE_EVENT] Unexpected event on tournament table %s: %s - broadcasting", tableID, event.Event)
-	broadcastFunc(tableID)
+	default:
+		log.Printf("[ENGINE_EVENT] Unexpected event on tournament table %s: %s - broadcasting", tableID, event.Event)
+		broadcastFunc(tableID)
+	}
 }
 
 // CheckTournamentEliminations checks for player eliminations in a tournament
