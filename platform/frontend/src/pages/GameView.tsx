@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Box, Stack, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Typography } from '@mui/material';
-import { ArrowBack, ExitToApp, Terminal, Pause } from '@mui/icons-material';
+import { ArrowBack, ExitToApp, Terminal, Pause, EmojiEvents, Home } from '@mui/icons-material';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useWebSocket } from '../contexts/WebSocketContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -27,6 +27,7 @@ interface TableState {
   current_bet?: number;
   action_deadline?: string;
   winners?: any[];
+  is_tournament?: boolean;
 }
 
 export const GameView: React.FC = () => {
@@ -43,6 +44,7 @@ export const GameView: React.FC = () => {
   const [gameMode, setGameMode] = useState<string>('heads_up');
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [consoleLogs, setConsoleLogs] = useState<any[]>([]);
+  const [tournamentId, setTournamentId] = useState<string | null>(null);
   const [history, setHistory] = useState<any[]>(() => {
     // Load history from localStorage on mount
     try {
@@ -304,12 +306,20 @@ export const GameView: React.FC = () => {
       setTableState(prev => prev ? { ...prev, status: 'playing' } : null);
     };
 
+    const handleTournamentComplete = (message: WSMessage) => {
+      addConsoleLog('TOURNAMENT', `Tournament complete! Winner: ${message.payload.winner_name}`, 'success');
+      showSuccess(`Tournament complete! Winner: ${message.payload.winner_name}`);
+      // Store tournament ID for navigation
+      setTournamentId(message.payload.tournament_id);
+    };
+
     addMessageHandler('table_state', handleTableState);
     addMessageHandler('game_update', handleGameUpdate);
     addMessageHandler('game_complete', handleGameComplete);
     addMessageHandler('error', handleError);
     addMessageHandler('tournament_paused', handleTournamentPaused);
     addMessageHandler('tournament_resumed', handleTournamentResumed);
+    addMessageHandler('tournament_complete', handleTournamentComplete);
 
     return () => {
       removeMessageHandler('table_state');
@@ -318,6 +328,7 @@ export const GameView: React.FC = () => {
       removeMessageHandler('error');
       removeMessageHandler('tournament_paused');
       removeMessageHandler('tournament_resumed');
+      removeMessageHandler('tournament_complete');
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tableId, addMessageHandler, removeMessageHandler, showSuccess, showError, showWarning, addConsoleLog]);
@@ -439,7 +450,11 @@ export const GameView: React.FC = () => {
 
           {tableState?.status && (
             <Badge
-              variant={tableState.status === 'playing' ? 'primary' : 'secondary'}
+              variant={
+                tableState.status === 'playing' ? 'primary'
+                : tableState.status === 'completed' ? 'success'
+                : 'secondary'
+              }
               pulse={tableState.status === 'playing'}
             >
               {tableState.status.toUpperCase()}
@@ -527,6 +542,46 @@ export const GameView: React.FC = () => {
               <Typography variant="body1" sx={{ color: COLORS.text.secondary }}>
                 Tournament is currently paused. Waiting for resume...
               </Typography>
+            </Box>
+          )}
+
+          {/* Tournament Complete Overlay */}
+          {tableState?.status === 'completed' && tableState?.is_tournament && (
+            <Box
+              sx={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 1000,
+              }}
+            >
+              <EmojiEvents sx={{ fontSize: 100, color: COLORS.success.main, mb: 3 }} />
+              <Typography variant="h3" sx={{ color: 'white', mb: 2, fontWeight: 'bold' }}>
+                Tournament Complete!
+              </Typography>
+              <Typography variant="body1" sx={{ color: COLORS.text.secondary, mb: 4 }}>
+                The tournament has ended. Check the tournament page for final standings.
+              </Typography>
+              <Button
+                variant="primary"
+                onClick={() => tournamentId ? navigate(`/tournaments/${tournamentId}`) : navigate('/tournaments')}
+                sx={{
+                  py: 1.5,
+                  px: 4,
+                  fontSize: '16px',
+                  fontWeight: 700,
+                }}
+              >
+                <Home sx={{ mr: 1 }} />
+                RETURN TO TOURNAMENT
+              </Button>
             </Box>
           )}
         </Box>
