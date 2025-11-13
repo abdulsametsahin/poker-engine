@@ -584,17 +584,24 @@ func BroadcastTournamentTableState(bridge *game.GameBridge, tableID string) {
 				potSide = game.SumSidePots(state.CurrentHand.Pot.Side)
 			}
 
+			payload := map[string]interface{}{
+				"table_id":      state.TableID,
+				"status":        string(state.Status),
+				"players":       players,
+				"current_hand":  state.CurrentHand,
+				"winners":       state.Winners,
+				"pot_main":      potMain,
+				"pot_side":      potSide,
+			}
+
+			// For tournament tables, include tournament_id by checking the game type
+			if state.GameType == pokerModels.GameTypeTournament {
+				payload["is_tournament"] = true
+			}
+
 			message := map[string]interface{}{
-				"type": "table_state",
-				"payload": map[string]interface{}{
-					"table_id":      state.TableID,
-					"status":        string(state.Status),
-					"players":       players,
-					"current_hand":  state.CurrentHand,
-					"winners":       state.Winners,
-					"pot_main":      potMain,
-					"pot_side":      potSide,
-				},
+				"type":    "table_state",
+				"payload": payload,
 			}
 
 			data, _ := json.Marshal(message)
@@ -623,12 +630,12 @@ func HandleTournamentComplete(
 			bridge.Mu.RUnlock()
 
 			if exists {
-				// Update engine's game status to completed/waiting
+				// Update engine's game status to completed
 				state := engineTable.GetState()
-				if state.Status == pokerModels.StatusHandComplete || state.Status == pokerModels.StatusPlaying {
-					// Set status to waiting (game is over for this table)
-					engineTable.GetGame().UpdateStatus(pokerModels.StatusWaiting)
-					log.Printf("[TOURNAMENT] Updated table %s engine status to waiting (tournament complete)", table.ID)
+				if state.Status == pokerModels.StatusHandComplete || state.Status == pokerModels.StatusPlaying || state.Status == pokerModels.StatusWaiting {
+					// Set status to completed (tournament is over for this table)
+					engineTable.GetGame().UpdateStatus(pokerModels.StatusCompleted)
+					log.Printf("[TOURNAMENT] Updated table %s engine status to completed (tournament complete)", table.ID)
 
 					// Broadcast final table state to all clients
 					BroadcastTournamentTableState(bridge, table.ID)
