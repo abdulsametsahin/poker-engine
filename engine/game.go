@@ -72,9 +72,9 @@ func (g *Game) StartNewHand() error {
 
 	g.table.Status = models.StatusPlaying
 	
-	// Fire handStart event
+	// CRITICAL DEADLOCK FIX: Fire event asynchronously
 	if g.onEvent != nil {
-		g.onEvent(models.Event{
+		event := models.Event{
 			Event:   "handStart",
 			TableID: g.table.TableID,
 			Data: map[string]interface{}{
@@ -83,7 +83,8 @@ func (g *Game) StartNewHand() error {
 				"smallBlindPosition": g.table.CurrentHand.SmallBlindPosition,
 				"bigBlindPosition":   g.table.CurrentHand.BigBlindPosition,
 			},
-		})
+		}
+		go g.onEvent(event)
 	}
 	
 	g.startActionTimer()
@@ -94,15 +95,17 @@ func (g *Game) removeBustedPlayers() {
 	for i, p := range g.table.Players {
 		if p != nil && p.Chips <= 0 {
 			g.table.Players[i] = nil
+			// CRITICAL DEADLOCK FIX: Fire event asynchronously
 			if g.onEvent != nil {
-				g.onEvent(models.Event{
+				event := models.Event{
 					Event:   "playerBusted",
 					TableID: g.table.TableID,
 					Data: map[string]interface{}{
 						"playerId":   p.PlayerID,
 						"playerName": p.PlayerName,
 					},
-				})
+				}
+				go g.onEvent(event)
 			}
 		}
 	}
@@ -250,9 +253,11 @@ func (g *Game) ProcessAction(playerID string, action models.PlayerAction, amount
 	g.table.CurrentHand.LastActionPlayerID = playerID
 	g.table.CurrentHand.LastActionTime = time.Now()
 
-	// Fire playerAction event to notify clients
+	// CRITICAL DEADLOCK FIX: Fire event asynchronously to prevent deadlock
+	// If event handler tries to call ProcessAction, it would deadlock waiting for mutex
+	// TODO: Full fix requires collecting events and firing after mutex release
 	if g.onEvent != nil {
-		g.onEvent(models.Event{
+		event := models.Event{
 			Event:   "playerAction",
 			TableID: g.table.TableID,
 			Data: map[string]interface{}{
@@ -260,7 +265,9 @@ func (g *Game) ProcessAction(playerID string, action models.PlayerAction, amount
 				"action":   string(action),
 				"amount":   amount,
 			},
-		})
+		}
+		// Fire event in goroutine to prevent deadlock
+		go g.onEvent(event)
 	}
 
 	if g.isBettingRoundComplete() {
@@ -351,16 +358,17 @@ func (g *Game) advanceToNextRound() {
 		return
 	}
 
-	// Fire roundAdvanced event
+	// CRITICAL DEADLOCK FIX: Fire event asynchronously to prevent deadlock
 	if g.onEvent != nil {
-		g.onEvent(models.Event{
+		event := models.Event{
 			Event:   "roundAdvanced",
 			TableID: g.table.TableID,
 			Data: map[string]interface{}{
-				"bettingRound":    string(g.table.CurrentHand.BettingRound),
-				"communityCards":  g.table.CurrentHand.CommunityCards,
+				"bettingRound":   string(g.table.CurrentHand.BettingRound),
+				"communityCards": g.table.CurrentHand.CommunityCards,
 			},
-		})
+		}
+		go g.onEvent(event)
 	}
 
 	// Only set position and start timer if there are players who can still act
@@ -449,12 +457,14 @@ func (g *Game) completeHand() {
 	g.table.Status = models.StatusHandComplete
 	g.stopActionTimer()
 
+	// CRITICAL DEADLOCK FIX: Fire event asynchronously
 	if g.onEvent != nil {
-		g.onEvent(models.Event{
+		event := models.Event{
 			Event:   "handComplete",
 			TableID: g.table.TableID,
 			Data:    models.HandCompleteEvent{Winners: g.table.Winners},
-		})
+		}
+		go g.onEvent(event)
 	}
 
 	// Check if game is complete (only one player with chips left)
@@ -467,8 +477,9 @@ func (g *Game) completeHand() {
 		}
 	}
 
+	// CRITICAL DEADLOCK FIX: Fire event asynchronously
 	if playersWithChips == 1 && lastPlayerStanding != nil && g.onEvent != nil {
-		g.onEvent(models.Event{
+		event := models.Event{
 			Event:   "gameComplete",
 			TableID: g.table.TableID,
 			Data: map[string]interface{}{
@@ -477,7 +488,8 @@ func (g *Game) completeHand() {
 				"finalChips":   lastPlayerStanding.Chips,
 				"totalPlayers": len(g.table.Players),
 			},
-		})
+		}
+		go g.onEvent(event)
 	}
 }
 
@@ -531,15 +543,17 @@ func (g *Game) startActionTimer() {
 	deadline := time.Now().Add(time.Duration(g.table.Config.ActionTimeout) * time.Second)
 	g.table.CurrentHand.ActionDeadline = &deadline
 
+	// CRITICAL DEADLOCK FIX: Fire event asynchronously
 	if g.onEvent != nil {
-		g.onEvent(models.Event{
+		event := models.Event{
 			Event:   "actionRequired",
 			TableID: g.table.TableID,
 			Data: models.ActionRequiredEvent{
 				PlayerID: currentPlayer.PlayerID,
 				Deadline: deadline.Format(time.RFC3339),
 			},
-		})
+		}
+		go g.onEvent(event)
 	}
 
 	g.actionTimer = time.AfterFunc(time.Duration(g.table.Config.ActionTimeout)*time.Second, func() {
@@ -596,15 +610,17 @@ func (g *Game) HandleTimeout(playerID string) error {
 		currentPlayer.LastActionAmount = 0
 		currentPlayer.HasActedThisRound = true
 
+		// CRITICAL DEADLOCK FIX: Fire event asynchronously
 		if g.onEvent != nil {
-			g.onEvent(models.Event{
+			event := models.Event{
 				Event:   "playerSitOut",
 				TableID: g.table.TableID,
 				Data: map[string]interface{}{
 					"playerId": playerID,
 					"reason":   "consecutive_timeouts",
 				},
-			})
+			}
+			go g.onEvent(event)
 		}
 	} else {
 		// Determine the appropriate auto-action
@@ -615,8 +631,9 @@ func (g *Game) HandleTimeout(playerID string) error {
 			currentPlayer.LastActionAmount = 0
 			currentPlayer.HasActedThisRound = true
 
+			// CRITICAL DEADLOCK FIX: Fire event asynchronously
 			if g.onEvent != nil {
-				g.onEvent(models.Event{
+				event := models.Event{
 					Event:   "playerAction",
 					TableID: g.table.TableID,
 					Data: map[string]interface{}{
@@ -625,7 +642,8 @@ func (g *Game) HandleTimeout(playerID string) error {
 						"reason":              "timeout",
 						"consecutiveTimeouts": currentPlayer.ConsecutiveTimeouts,
 					},
-				})
+				}
+				go g.onEvent(event)
 			}
 		} else {
 			// No bet to call -> auto-check
@@ -634,8 +652,9 @@ func (g *Game) HandleTimeout(playerID string) error {
 			currentPlayer.HasActedThisRound = true
 			// Status remains Active
 
+			// CRITICAL DEADLOCK FIX: Fire event asynchronously
 			if g.onEvent != nil {
-				g.onEvent(models.Event{
+				event := models.Event{
 					Event:   "playerAction",
 					TableID: g.table.TableID,
 					Data: map[string]interface{}{
@@ -644,7 +663,8 @@ func (g *Game) HandleTimeout(playerID string) error {
 						"reason":              "timeout",
 						"consecutiveTimeouts": currentPlayer.ConsecutiveTimeouts,
 					},
-				})
+				}
+				go g.onEvent(event)
 			}
 		}
 	}
