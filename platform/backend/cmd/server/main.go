@@ -8,6 +8,7 @@ import (
 	"poker-platform/backend/internal/models"
 	redisClient "poker-platform/backend/internal/redis"
 	"poker-platform/backend/internal/server/config"
+	"poker-platform/backend/internal/middleware"
 	"poker-platform/backend/internal/server/events"
 	"poker-platform/backend/internal/server/game"
 	"poker-platform/backend/internal/server/handlers"
@@ -23,8 +24,9 @@ import (
 )
 
 var (
-	appConfig *config.AppConfig
-	bridge    *game.GameBridge
+	appConfig         *config.AppConfig
+	bridge            *game.GameBridge
+	actionRateLimiter *middleware.WebSocketActionLimiter
 )
 
 func main() {
@@ -66,6 +68,10 @@ func main() {
 
 	// Initialize game bridge
 	bridge = game.NewGameBridge()
+
+	// Initialize rate limiter for game actions
+	actionRateLimiter = middleware.NewWebSocketActionLimiter()
+	defer actionRateLimiter.Stop()
 
 	// Setup tournament callbacks
 	setupTournamentCallbacks()
@@ -285,6 +291,19 @@ func handleWSMessageWrapper(c *websocket.Client, msg websocket.WSMessage) {
 		log.Printf("Sent table state to client %s for table %s", c.UserID, tableID)
 
 	case "game_action":
+		// CRITICAL: Rate limiting to prevent action spam and DoS attacks
+		if !actionRateLimiter.AllowAction(c.UserID) {
+			log.Printf("[RATELIMIT] Action denied for user %s - rate limit exceeded", c.UserID)
+			websocket.SendToClient(c, websocket.WSMessage{
+				Type: "error",
+				Payload: map[string]interface{}{
+					"message": "Too many actions. Please slow down.",
+					"code":    "RATE_LIMIT_EXCEEDED",
+				},
+			})
+			return
+		}
+
 		payload := msg.Payload.(map[string]interface{})
 		action := payload["action"].(string)
 		amount := 0

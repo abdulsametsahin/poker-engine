@@ -56,6 +56,51 @@ func (s *Service) ValidateAmount(amount int) error {
 	return nil
 }
 
+// deductChipsInTx removes chips from a user's balance within an existing transaction
+// Internal function - use DeductChips for standalone operations
+func (s *Service) deductChipsInTx(ctx context.Context, tx *gorm.DB, userID string, amount int, txType TransactionType, refID string, description string) error {
+	// Get current balance with row lock
+	var user models.User
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		First(&user, "id = ?", userID).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return ErrUserNotFound
+		}
+		return fmt.Errorf("failed to lock user record: %w", err)
+	}
+
+	// Check sufficient balance
+	if user.Chips < amount {
+		return ErrInsufficientChips
+	}
+
+	balanceBefore := user.Chips
+	balanceAfter := balanceBefore - amount
+
+	// Update balance
+	if err := tx.Model(&user).Update("chips", balanceAfter).Error; err != nil {
+		return fmt.Errorf("failed to update balance: %w", err)
+	}
+
+	// Create audit record
+	transaction := Transaction{
+		ID:              uuid.New().String(),
+		UserID:          userID,
+		Amount:          -amount, // Negative for deduction
+		BalanceBefore:   balanceBefore,
+		BalanceAfter:    balanceAfter,
+		TransactionType: txType,
+		ReferenceID:     &refID,
+		Description:     description,
+	}
+
+	if err := tx.Create(&transaction).Error; err != nil {
+		return fmt.Errorf("failed to create transaction record: %w", err)
+	}
+
+	return nil
+}
+
 // DeductChips removes chips from a user's balance with validation and audit trail
 func (s *Service) DeductChips(ctx context.Context, userID string, amount int, txType TransactionType, refID string, description string) error {
 	if err := s.ValidateAmount(amount); err != nil {
@@ -63,47 +108,48 @@ func (s *Service) DeductChips(ctx context.Context, userID string, amount int, tx
 	}
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Get current balance with row lock
-		var user models.User
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			First(&user, "id = ?", userID).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return ErrUserNotFound
-			}
-			return fmt.Errorf("failed to lock user record: %w", err)
-		}
-
-		// Check sufficient balance
-		if user.Chips < amount {
-			return ErrInsufficientChips
-		}
-
-		balanceBefore := user.Chips
-		balanceAfter := balanceBefore - amount
-
-		// Update balance
-		if err := tx.Model(&user).Update("chips", balanceAfter).Error; err != nil {
-			return fmt.Errorf("failed to update balance: %w", err)
-		}
-
-		// Create audit record
-		transaction := Transaction{
-			ID:              uuid.New().String(),
-			UserID:          userID,
-			Amount:          -amount, // Negative for deduction
-			BalanceBefore:   balanceBefore,
-			BalanceAfter:    balanceAfter,
-			TransactionType: txType,
-			ReferenceID:     &refID,
-			Description:     description,
-		}
-
-		if err := tx.Create(&transaction).Error; err != nil {
-			return fmt.Errorf("failed to create transaction record: %w", err)
-		}
-
-		return nil
+		return s.deductChipsInTx(ctx, tx, userID, amount, txType, refID, description)
 	})
+}
+
+// addChipsInTx adds chips to a user's balance within an existing transaction
+// Internal function - use AddChips for standalone operations
+func (s *Service) addChipsInTx(ctx context.Context, tx *gorm.DB, userID string, amount int, txType TransactionType, refID string, description string) error {
+	// Get current balance with row lock
+	var user models.User
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		First(&user, "id = ?", userID).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return ErrUserNotFound
+		}
+		return fmt.Errorf("failed to lock user record: %w", err)
+	}
+
+	balanceBefore := user.Chips
+	balanceAfter := balanceBefore + amount
+
+	// Update balance
+	if err := tx.Model(&user).Update("chips", balanceAfter).Error; err != nil {
+		return fmt.Errorf("failed to update balance: %w", err)
+	}
+
+	// Create audit record
+	transaction := Transaction{
+		ID:              uuid.New().String(),
+		UserID:          userID,
+		Amount:          amount, // Positive for addition
+		BalanceBefore:   balanceBefore,
+		BalanceAfter:    balanceAfter,
+		TransactionType: txType,
+		ReferenceID:     &refID,
+		Description:     description,
+	}
+
+	if err := tx.Create(&transaction).Error; err != nil {
+		return fmt.Errorf("failed to create transaction record: %w", err)
+	}
+
+	return nil
 }
 
 // AddChips adds chips to a user's balance with audit trail
@@ -113,58 +159,27 @@ func (s *Service) AddChips(ctx context.Context, userID string, amount int, txTyp
 	}
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Get current balance with row lock
-		var user models.User
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			First(&user, "id = ?", userID).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return ErrUserNotFound
-			}
-			return fmt.Errorf("failed to lock user record: %w", err)
-		}
-
-		balanceBefore := user.Chips
-		balanceAfter := balanceBefore + amount
-
-		// Update balance
-		if err := tx.Model(&user).Update("chips", balanceAfter).Error; err != nil {
-			return fmt.Errorf("failed to update balance: %w", err)
-		}
-
-		// Create audit record
-		transaction := Transaction{
-			ID:              uuid.New().String(),
-			UserID:          userID,
-			Amount:          amount, // Positive for addition
-			BalanceBefore:   balanceBefore,
-			BalanceAfter:    balanceAfter,
-			TransactionType: txType,
-			ReferenceID:     &refID,
-			Description:     description,
-		}
-
-		if err := tx.Create(&transaction).Error; err != nil {
-			return fmt.Errorf("failed to create transaction record: %w", err)
-		}
-
-		return nil
+		return s.addChipsInTx(ctx, tx, userID, amount, txType, refID, description)
 	})
 }
 
 // TransferChips transfers chips from one user to another atomically
+// CRITICAL: Uses a single transaction to ensure atomicity - if either operation fails,
+// both are rolled back, preventing money loss or duplication
 func (s *Service) TransferChips(ctx context.Context, fromUserID, toUserID string, amount int, txType TransactionType, refID string, description string) error {
 	if err := s.ValidateAmount(amount); err != nil {
 		return err
 	}
 
+	// Single atomic transaction for both operations
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Deduct from sender
-		if err := s.DeductChips(ctx, fromUserID, amount, txType, refID, description); err != nil {
+		// Deduct from sender (uses same transaction tx)
+		if err := s.deductChipsInTx(ctx, tx, fromUserID, amount, txType, refID, description); err != nil {
 			return fmt.Errorf("failed to deduct from sender: %w", err)
 		}
 
-		// Add to receiver
-		if err := s.AddChips(ctx, toUserID, amount, txType, refID, description); err != nil {
+		// Add to receiver (uses same transaction tx)
+		if err := s.addChipsInTx(ctx, tx, toUserID, amount, txType, refID, description); err != nil {
 			return fmt.Errorf("failed to add to receiver: %w", err)
 		}
 
