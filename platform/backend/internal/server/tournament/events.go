@@ -229,6 +229,83 @@ func HandleTournamentEngineEvent(
 		log.Printf("[ENGINE_EVENT] Card dealt on tournament table %s (skipping broadcast)", tableID)
 		return
 
+	case "playerBusted":
+		// CRITICAL: Handle player elimination when they run out of chips
+		// This event is fired when the engine removes a player with 0 chips at the start of a new hand
+		log.Printf("[ENGINE_EVENT] Player busted on tournament table %s", tableID)
+
+		data, ok := event.Data.(map[string]interface{})
+		if !ok {
+			log.Printf("[PLAYER_BUSTED] Invalid event data for table %s", tableID)
+			return
+		}
+
+		playerID, _ := data["playerId"].(string)
+		playerName, _ := data["playerName"].(string)
+
+		if playerID == "" {
+			log.Printf("[PLAYER_BUSTED] Missing player ID in event data")
+			return
+		}
+
+		log.Printf("[PLAYER_BUSTED] Player %s (%s) busted on table %s", playerName, playerID, tableID)
+
+		// Get tournament ID for this table
+		var dbTable models.Table
+		if err := database.Where("id = ?", tableID).First(&dbTable).Error; err != nil {
+			log.Printf("[PLAYER_BUSTED] Error getting table: %v", err)
+			return
+		}
+
+		if dbTable.TournamentID == nil {
+			log.Printf("[PLAYER_BUSTED] Table %s is not a tournament table", tableID)
+			return
+		}
+
+		tournamentID := *dbTable.TournamentID
+
+		// Check if player is already eliminated
+		var tournamentPlayer models.TournamentPlayer
+		err := database.Where("tournament_id = ? AND user_id = ?", tournamentID, playerID).First(&tournamentPlayer).Error
+		if err != nil {
+			log.Printf("[PLAYER_BUSTED] Error checking elimination status for player %s: %v", playerID, err)
+			return
+		}
+
+		// Skip if already eliminated
+		if tournamentPlayer.EliminatedAt != nil {
+			log.Printf("[PLAYER_BUSTED] Player %s already eliminated, skipping", playerID)
+			return
+		}
+
+		// Eliminate the player
+		if err := eliminationTracker.EliminatePlayer(tournamentID, playerID); err != nil {
+			log.Printf("[PLAYER_BUSTED] Error eliminating player %s: %v", playerID, err)
+		} else {
+			log.Printf("[PLAYER_BUSTED] Successfully eliminated player %s from tournament %s", playerID, tournamentID)
+		}
+
+		// Check if we should consolidate or balance tables
+		go func() {
+			shouldConsolidate, _ := eliminationTracker.ShouldConsolidateTables(tournamentID)
+			if shouldConsolidate {
+				if err := consolidator.ConsolidateTables(tournamentID); err != nil {
+					log.Printf("[PLAYER_BUSTED] Error consolidating tables: %v", err)
+				}
+			} else {
+				shouldBalance, _ := eliminationTracker.ShouldBalanceTables(tournamentID)
+				if shouldBalance {
+					if err := consolidator.BalanceTables(tournamentID); err != nil {
+						log.Printf("[PLAYER_BUSTED] Error balancing tables: %v", err)
+					}
+				}
+			}
+		}()
+
+		// Broadcast updated table state
+		broadcastFunc(tableID)
+		return
+
 	default:
 		log.Printf("[ENGINE_EVENT] Unexpected event on tournament table %s: %s - broadcasting", tableID, event.Event)
 		broadcastFunc(tableID)
