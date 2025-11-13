@@ -59,7 +59,7 @@ func HandleWebSocket(
 	mu.Unlock()
 
 	go client.WritePump()
-	go client.ReadPump(clients, handleMessage)
+	go client.ReadPump(clients, mu, handleMessage)
 }
 
 // SendToClient sends a message to a specific client
