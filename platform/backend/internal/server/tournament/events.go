@@ -408,9 +408,8 @@ func UpdateTournamentTableBlinds(
 		return
 	}
 
-	bridge.Mu.Lock()
-	defer bridge.Mu.Unlock()
-
+	bridge.Mu.RLock()
+	updatedCount := 0
 	for _, dbTable := range tables {
 		// Update the engine table if it exists
 		engineTable, exists := bridge.Tables[dbTable.ID]
@@ -418,15 +417,20 @@ func UpdateTournamentTableBlinds(
 			continue
 		}
 
-		// Update the config in the engine table
-		state := engineTable.GetState()
-		state.Config.SmallBlind = newLevel.SmallBlind
-		state.Config.BigBlind = newLevel.BigBlind
+		// CRITICAL: Use UpdateBlinds method for thread-safe blind updates
+		// This properly coordinates with the game mutex to prevent race conditions
+		// Safe to call during active hands - only affects future hands
+		if err := engineTable.UpdateBlinds(newLevel.SmallBlind, newLevel.BigBlind); err != nil {
+			log.Printf("Error updating blinds for table %s: %v", dbTable.ID, err)
+			continue
+		}
 
-		log.Printf("Updated table %s blinds to %d/%d", dbTable.ID, newLevel.SmallBlind, newLevel.BigBlind)
+		log.Printf("Updated table %s blinds to %d/%d (will apply to next hand)", dbTable.ID, newLevel.SmallBlind, newLevel.BigBlind)
+		updatedCount++
 	}
+	bridge.Mu.RUnlock()
 
-	log.Printf("Tournament %s: Updated %d tables with new blinds", tournamentID, len(tables))
+	log.Printf("Tournament %s: Updated %d tables with new blinds", tournamentID, updatedCount)
 }
 
 // BroadcastBlindIncrease broadcasts a blind increase to all clients
