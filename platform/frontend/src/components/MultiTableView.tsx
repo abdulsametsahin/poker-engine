@@ -35,7 +35,7 @@ export const MultiTableView: React.FC<MultiTableViewProps> = ({ currentUserId, o
 
   // Handle WebSocket messages for all subscribed tables
   useEffect(() => {
-    const handleTableState = (message: WSMessage) => {
+    const handleTableState = (message: WSMessage<any>) => {
       const tableId = message.payload.table_id;
       if (!tableId) return;
 
@@ -55,18 +55,18 @@ export const MultiTableView: React.FC<MultiTableViewProps> = ({ currentUserId, o
       setTables(prev => new Map(prev).set(tableId, newState));
     };
 
-    const handleGameUpdate = (message: WSMessage) => {
+    const handleGameUpdate = (message: WSMessage<any>) => {
       handleTableState(message);
     };
 
-    addMessageHandler('table_state', handleTableState);
-    addMessageHandler('game_update', handleGameUpdate);
+    const cleanup1 = addMessageHandler('table_state', handleTableState);
+    const cleanup2 = addMessageHandler('game_update', handleGameUpdate);
 
     return () => {
-      removeMessageHandler('table_state');
-      removeMessageHandler('game_update');
+      cleanup1();
+      cleanup2();
     };
-  }, [addMessageHandler, removeMessageHandler]);
+  }, [addMessageHandler]);
 
   const handleAddTable = useCallback(() => {
     // Navigate to lobby to join a new table

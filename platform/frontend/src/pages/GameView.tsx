@@ -13,7 +13,18 @@ import { WinnerDisplay, HandCompleteDisplay, TournamentPausedModal } from '../co
 import { Button } from '../components/common/Button';
 import { Badge } from '../components/common/Badge';
 import { COLORS, RADIUS, GAME } from '../constants';
-import { Player, WSMessage } from '../types';
+import {
+  Player,
+  WSMessage,
+  TableStatePayload,
+  GameUpdatePayload,
+  GameCompletePayload,
+  ErrorPayload,
+  TournamentPausedPayload,
+  TournamentResumedPayload,
+  TournamentCompletePayload,
+  ChatMessagePayload
+} from '../types';
 import { addActiveTable, updateTableActivity, removeActiveTable } from '../utils/tableManager';
 
 interface TableState {
@@ -167,6 +178,12 @@ export const GameView: React.FC = () => {
   // Handle WebSocket messages
   useEffect(() => {
     const handleTableState = (message: WSMessage) => {
+      // Filter by table_id - only process messages for our table
+      if (message.payload.table_id && message.payload.table_id !== tableId) {
+        console.log(`[GameView] Ignoring table_state for table ${message.payload.table_id}, current table: ${tableId}`);
+        return;
+      }
+
       // Log the message receipt
       addConsoleLog('WEBSOCKET', `Received ${message.type} message`, 'debug');
 
@@ -330,47 +347,87 @@ export const GameView: React.FC = () => {
       }
     };
 
-    const handleError = (message: WSMessage) => {
+    const handleError = (message: WSMessage<ErrorPayload>) => {
       showError(message.payload.message || 'An error occurred');
     };
 
-    const handleTournamentPaused = (message: WSMessage) => {
+    const handleTournamentPaused = (message: WSMessage<TournamentPausedPayload>) => {
+      // Filter by tournament_id if we're in a tournament
+      if (tournamentId && message.payload.tournament_id !== tournamentId) {
+        console.log(`[GameView] Ignoring tournament_paused for ${message.payload.tournament_id}, current: ${tournamentId}`);
+        return;
+      }
+
       addConsoleLog('TOURNAMENT', 'Tournament paused - Game on hold', 'warning');
       showWarning('Tournament has been paused. Game is on hold.');
       // Update table state to paused
       setTableState(prev => prev ? { ...prev, status: 'paused' } : null);
     };
 
-    const handleTournamentResumed = (message: WSMessage) => {
+    const handleTournamentResumed = (message: WSMessage<TournamentResumedPayload>) => {
+      // Filter by tournament_id if we're in a tournament
+      if (tournamentId && message.payload.tournament_id !== tournamentId) {
+        console.log(`[GameView] Ignoring tournament_resumed for ${message.payload.tournament_id}, current: ${tournamentId}`);
+        return;
+      }
+
       addConsoleLog('TOURNAMENT', 'Tournament resumed - Game continuing', 'success');
       showSuccess('Tournament has been resumed. Game continues!');
       // Update table state back to playing
       setTableState(prev => prev ? { ...prev, status: 'playing' } : null);
     };
 
-    const handleTournamentComplete = (message: WSMessage) => {
+    const handleTournamentComplete = (message: WSMessage<TournamentCompletePayload>) => {
+      // Filter by tournament_id if we're in a tournament
+      if (tournamentId && message.payload.tournament_id !== tournamentId) {
+        console.log(`[GameView] Ignoring tournament_complete for ${message.payload.tournament_id}, current: ${tournamentId}`);
+        return;
+      }
+
       addConsoleLog('TOURNAMENT', `Tournament complete! Winner: ${message.payload.winner_name}`, 'success');
       showSuccess(`Tournament complete! Winner: ${message.payload.winner_name}`);
       // Store tournament ID for navigation
       setTournamentId(message.payload.tournament_id);
     };
 
-    addMessageHandler('table_state', handleTableState);
-    addMessageHandler('game_update', handleGameUpdate);
-    addMessageHandler('game_complete', handleGameComplete);
-    addMessageHandler('error', handleError);
-    addMessageHandler('tournament_paused', handleTournamentPaused);
-    addMessageHandler('tournament_resumed', handleTournamentResumed);
-    addMessageHandler('tournament_complete', handleTournamentComplete);
+    const handleChatMessage = (message: WSMessage<ChatMessagePayload>) => {
+      // Filter by table_id - only process messages for our table
+      if (message.payload.table_id !== tableId) {
+        console.log(`[GameView] Ignoring chat_message for table ${message.payload.table_id}, current: ${tableId}`);
+        return;
+      }
+
+      const newMessage = {
+        id: `${Date.now()}-${Math.random()}`,
+        userId: message.payload.user_id,
+        username: message.payload.username,
+        message: message.payload.message,
+        timestamp: new Date(message.payload.timestamp),
+      };
+
+      setChatMessages(prev => [...prev, newMessage]);
+      addConsoleLog('CHAT', `${message.payload.username}: ${message.payload.message}`, 'info');
+    };
+
+    // Register handlers and store cleanup functions
+    const cleanup1 = addMessageHandler('table_state', handleTableState);
+    const cleanup2 = addMessageHandler('game_update', handleGameUpdate);
+    const cleanup3 = addMessageHandler('game_complete', handleGameComplete);
+    const cleanup4 = addMessageHandler('error', handleError);
+    const cleanup5 = addMessageHandler('tournament_paused', handleTournamentPaused);
+    const cleanup6 = addMessageHandler('tournament_resumed', handleTournamentResumed);
+    const cleanup7 = addMessageHandler('tournament_complete', handleTournamentComplete);
+    const cleanup8 = addMessageHandler('chat_message', handleChatMessage);
 
     return () => {
-      removeMessageHandler('table_state');
-      removeMessageHandler('game_update');
-      removeMessageHandler('game_complete');
-      removeMessageHandler('error');
-      removeMessageHandler('tournament_paused');
-      removeMessageHandler('tournament_resumed');
-      removeMessageHandler('tournament_complete');
+      cleanup1();
+      cleanup2();
+      cleanup3();
+      cleanup4();
+      cleanup5();
+      cleanup6();
+      cleanup7();
+      cleanup8();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tableId, addMessageHandler, removeMessageHandler, showSuccess, showError, showWarning, addConsoleLog]);
@@ -432,17 +489,34 @@ export const GameView: React.FC = () => {
   }, [pendingAction, isMyTurn, tableState, generateRequestId, sendMessage, addConsoleLog]);
 
   const handleSendChatMessage = useCallback((message: string) => {
-    // For now, just add to local state
-    // TODO: Implement WebSocket chat when backend supports it
-    const username = user?.username || 'Anonymous';
-    setChatMessages(prev => [...prev, {
-      id: Date.now().toString(),
-      userId: currentUserId || '',
+    if (!message.trim() || !tableId || !user) return;
+
+    const username = user.username || 'Anonymous';
+
+    // Optimistic update - add to local state immediately
+    const tempMessage = {
+      id: `temp-${Date.now()}`,
+      userId: currentUserId || user.id,
       username,
-      message,
+      message: message.trim(),
       timestamp: new Date(),
-    }]);
-  }, [currentUserId, user]);
+    };
+    setChatMessages(prev => [...prev, tempMessage]);
+
+    // Send to server via WebSocket
+    sendMessage({
+      type: 'chat_message',
+      payload: {
+        table_id: tableId,
+        user_id: user.id,
+        username,
+        message: message.trim(),
+        timestamp: new Date().toISOString(),
+      }
+    });
+
+    addConsoleLog('CHAT', `Sent: ${message.trim()}`, 'debug');
+  }, [currentUserId, user, tableId, sendMessage, addConsoleLog]);
 
   const handlePlayAgain = useCallback(() => {
     // Navigate to lobby and automatically join queue with same game mode

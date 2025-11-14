@@ -107,51 +107,119 @@ export const Tournaments: React.FC = () => {
 
   // Setup WebSocket handlers for real-time tournament updates
   useEffect(() => {
-    const handleTournamentPaused = (message: any) => {
+    const handleTournamentPaused = (message: { payload: { tournament_id: string } }) => {
       const tournamentId = message.payload?.tournament_id;
       if (tournamentId) {
         // Update the tournament status in the list
-        setTournaments(prev => prev.map(t => 
-          t.id === tournamentId 
+        setTournaments(prev => prev.map(t =>
+          t.id === tournamentId
             ? { ...t, status: 'paused' }
             : t
         ));
       }
     };
 
-    const handleTournamentResumed = (message: any) => {
+    const handleTournamentResumed = (message: { payload: { tournament_id: string } }) => {
       const tournamentId = message.payload?.tournament_id;
       if (tournamentId) {
         // Update the tournament status in the list
-        setTournaments(prev => prev.map(t => 
-          t.id === tournamentId 
+        setTournaments(prev => prev.map(t =>
+          t.id === tournamentId
             ? { ...t, status: 'in_progress' }
             : t
         ));
       }
     };
 
-    const handleTournamentUpdate = (message: any) => {
+    const handleTournamentUpdate = (message: { payload: { tournament?: Tournament } }) => {
       if (message.payload?.tournament) {
         const updatedTournament = message.payload.tournament;
-        setTournaments(prev => prev.map(t => 
-          t.id === updatedTournament.id 
+        setTournaments(prev => prev.map(t =>
+          t.id === updatedTournament.id
             ? { ...t, ...updatedTournament }
             : t
         ));
       }
     };
 
-    addMessageHandler('tournament_paused', handleTournamentPaused);
-    addMessageHandler('tournament_resumed', handleTournamentResumed);
-    addMessageHandler('tournament_update', handleTournamentUpdate);
+    const handleTournamentCreated = (message: { payload: {
+      tournament_id: string;
+      name: string;
+      buy_in: number;
+      starting_chips: number;
+      max_players: number;
+      min_players: number;
+      status: string;
+      created_at: string;
+    } }) => {
+      const newTournament = {
+        id: message.payload.tournament_id,
+        tournament_code: '', // Will be filled when fetched
+        name: message.payload.name,
+        status: message.payload.status as any,
+        buy_in: message.payload.buy_in,
+        starting_chips: message.payload.starting_chips,
+        min_players: message.payload.min_players,
+        max_players: message.payload.max_players,
+        current_players: 1, // Creator is first player
+        prize_pool: message.payload.buy_in,
+        created_at: message.payload.created_at,
+        structure: '{}',
+      };
+
+      setTournaments(prev => [newTournament, ...prev]);
+      showSuccess(`New tournament "${message.payload.name}" created!`);
+      console.log('[Tournaments] New tournament created:', newTournament.id);
+    };
+
+    const handleTournamentStarted = (message: { payload: { tournament_id: string } }) => {
+      const { tournament_id } = message.payload;
+
+      setTournaments(prev => prev.map(t =>
+        t.id === tournament_id
+          ? { ...t, status: 'in_progress' }
+          : t
+      ));
+
+      console.log('[Tournaments] Tournament started:', tournament_id);
+    };
+
+    const handleTournamentPlayerRegistered = (message: { payload: {
+      tournament_id: string;
+      user_id: string;
+      username: string;
+    } }) => {
+      const { tournament_id } = message.payload;
+
+      setTournaments(prev => prev.map(t =>
+        t.id === tournament_id
+          ? {
+              ...t,
+              current_players: (t.current_players || 0) + 1,
+              prize_pool: (t.current_players || 0 + 1) * t.buy_in,
+            }
+          : t
+      ));
+
+      console.log('[Tournaments] Player registered for tournament:', tournament_id);
+    };
+
+    const cleanup1 = addMessageHandler('tournament_paused', handleTournamentPaused);
+    const cleanup2 = addMessageHandler('tournament_resumed', handleTournamentResumed);
+    const cleanup3 = addMessageHandler('tournament_update', handleTournamentUpdate);
+    const cleanup4 = addMessageHandler('tournament_created', handleTournamentCreated);
+    const cleanup5 = addMessageHandler('tournament_started', handleTournamentStarted);
+    const cleanup6 = addMessageHandler('tournament_player_registered', handleTournamentPlayerRegistered);
 
     return () => {
-      removeMessageHandler('tournament_paused');
-      removeMessageHandler('tournament_resumed');
-      removeMessageHandler('tournament_update');
+      cleanup1();
+      cleanup2();
+      cleanup3();
+      cleanup4();
+      cleanup5();
+      cleanup6();
     };
-  }, [addMessageHandler, removeMessageHandler]);
+  }, [addMessageHandler, showSuccess]);
 
   const handleCreateTournament = async () => {
     try {

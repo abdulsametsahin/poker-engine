@@ -4,6 +4,11 @@ import { STORAGE_KEYS } from '../constants';
 import { getStorageItem, setStorageItem, removeStorageItem } from '../utils';
 import { authAPI } from '../services/api';
 
+interface StoredUserData {
+  user: User;
+  _storedAt: number;
+}
+
 interface AuthContextType {
   user: User | null;
   token: string | null;
@@ -46,15 +51,45 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           const response = await authAPI.getCurrentUser();
           const userData = response.data;
           setUser(userData);
-          setStorageItem(STORAGE_KEYS.USER_DATA, JSON.stringify(userData));
+
+          // Store with timestamp
+          const dataToStore: StoredUserData = {
+            user: userData,
+            _storedAt: Date.now()
+          };
+          setStorageItem(STORAGE_KEYS.USER_DATA, JSON.stringify(dataToStore));
         } catch (error) {
-          // If fetch fails, use stored data as fallback
+          console.warn('Failed to fetch fresh user data, checking stored data:', error);
+
+          // If fetch fails, use stored data as fallback only if it's fresh
           const storedUserData = getStorageItem(STORAGE_KEYS.USER_DATA);
           if (storedUserData) {
             try {
-              const userData = JSON.parse(storedUserData);
-              setUser(userData);
+              const parsed: StoredUserData = JSON.parse(storedUserData);
+
+              // Check if stored data has timestamp (backward compatibility)
+              if (parsed._storedAt) {
+                const age = Date.now() - parsed._storedAt;
+                const FIVE_MINUTES = 5 * 60 * 1000;
+
+                if (age < FIVE_MINUTES) {
+                  setUser(parsed.user);
+                  console.log('Using cached user data (age: ' + Math.round(age / 1000) + 's)');
+                } else {
+                  console.warn('Stored user data is stale (age: ' + Math.round(age / 60000) + 'm), please refresh or re-login');
+                  // Still set the user but log a warning
+                  setUser(parsed.user);
+                }
+              } else {
+                // Old format without timestamp - treat as potentially stale
+                console.warn('Stored user data has no timestamp, treating as stale');
+                const userData = parsed as any;
+                if (userData.id && userData.username) {
+                  setUser(userData);
+                }
+              }
             } catch (parseError) {
+              console.error('Failed to parse stored user data:', parseError);
               // If parsing fails, fall back to basic user info
               const storedUserId = getStorageItem(STORAGE_KEYS.USER_ID);
               const storedUsername = getStorageItem(STORAGE_KEYS.USERNAME);
@@ -79,10 +114,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setToken(newToken);
     setUser(userData);
 
+    const dataToStore: StoredUserData = {
+      user: userData,
+      _storedAt: Date.now()
+    };
+
     setStorageItem(STORAGE_KEYS.AUTH_TOKEN, newToken);
     setStorageItem(STORAGE_KEYS.USER_ID, userData.id);
     setStorageItem(STORAGE_KEYS.USERNAME, userData.username);
-    setStorageItem(STORAGE_KEYS.USER_DATA, JSON.stringify(userData));
+    setStorageItem(STORAGE_KEYS.USER_DATA, JSON.stringify(dataToStore));
   };
 
   const logout = () => {
@@ -103,8 +143,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (updates.username) {
         setStorageItem(STORAGE_KEYS.USERNAME, updates.username);
       }
-      // Update stored user data
-      setStorageItem(STORAGE_KEYS.USER_DATA, JSON.stringify(updatedUser));
+
+      // Update stored user data with fresh timestamp
+      const dataToStore: StoredUserData = {
+        user: updatedUser,
+        _storedAt: Date.now()
+      };
+      setStorageItem(STORAGE_KEYS.USER_DATA, JSON.stringify(dataToStore));
     }
   };
 

@@ -124,15 +124,179 @@ export type WSMessageType =
   | 'game_update'
   | 'game_complete'
   | 'player_action'
+  | 'tournament_paused'
+  | 'tournament_resumed'
+  | 'tournament_complete'
+  | 'player_eliminated'
+  | 'blind_level_increased'
+  | 'chat_message'
+  | 'table_created'
+  | 'table_updated'
+  | 'table_completed'
+  | 'table_player_joined'
+  | 'table_player_left'
+  | 'tournament_created'
+  | 'tournament_started'
+  | 'tournament_player_registered'
+  | 'tournament_player_unregistered'
   | 'error';
 
+// WebSocket payload type definitions
 export interface MatchFoundPayload {
   table_id: string;
+  game_mode?: GameMode;
+  players?: string[];
 }
 
 export interface PlayerActionPayload {
   action: PlayerAction;
   amount?: number;
+}
+
+export interface TableStatePayload extends TableState {
+  // TableState already has all needed properties
+}
+
+export interface GameUpdatePayload extends TableState {
+  last_action?: {
+    player_id: string;
+    action: PlayerAction;
+    amount?: number;
+  };
+}
+
+export interface GameCompletePayload {
+  table_id?: string;
+  winner_id: string;
+  winner_name?: string;
+  winner_username?: string;
+  final_chip_count: number;
+  players_defeated?: number;
+  total_hands?: number;
+  biggest_pot?: number;
+  best_hand?: string;
+}
+
+export interface TournamentPausedPayload {
+  tournament_id: string;
+  reason?: string;
+  paused_at?: string;
+}
+
+export interface TournamentResumedPayload {
+  tournament_id: string;
+  resumed_at?: string;
+}
+
+export interface TournamentCompletePayload {
+  tournament_id: string;
+  winner_id: string;
+  winner_name: string;
+  final_standings?: Array<{
+    player_id: string;
+    player_name: string;
+    position: number;
+    prize?: number;
+  }>;
+}
+
+export interface PlayerEliminatedPayload {
+  tournament_id: string;
+  player_id: string;
+  player_name: string;
+  position: number;
+  eliminated_by?: string;
+}
+
+export interface BlindLevelIncreasedPayload {
+  tournament_id: string;
+  level: number;
+  small_blind: number;
+  big_blind: number;
+  ante?: number;
+}
+
+export interface ErrorPayload {
+  code?: string;
+  message: string;
+  details?: any;
+}
+
+// Chat payload
+export interface ChatMessagePayload {
+  table_id: string;
+  user_id: string;
+  username: string;
+  message: string;
+  timestamp: string;
+}
+
+// Table event payloads
+export interface TableCreatedPayload {
+  table_id: string;
+  game_mode: GameMode;
+  small_blind: number;
+  big_blind: number;
+  current_players: number;
+  max_players: number;
+  status: string;
+  created_at: string;
+}
+
+export interface TableUpdatedPayload {
+  table_id: string;
+  status?: string;
+  current_players?: number;
+}
+
+export interface TableCompletedPayload {
+  table_id: string;
+  winner_id: string;
+  winner_name: string;
+  completed_at: string;
+}
+
+export interface TablePlayerJoinedPayload {
+  table_id: string;
+  user_id: string;
+  username: string;
+  seat: number;
+}
+
+export interface TablePlayerLeftPayload {
+  table_id: string;
+  user_id: string;
+  username: string;
+  reason?: string;
+}
+
+// Tournament event payloads
+export interface TournamentCreatedPayload {
+  tournament_id: string;
+  name: string;
+  buy_in: number;
+  starting_chips: number;
+  max_players: number;
+  min_players: number;
+  status: string;
+  created_at: string;
+}
+
+export interface TournamentStartedPayload {
+  tournament_id: string;
+  started_at: string;
+}
+
+export interface TournamentPlayerRegisteredPayload {
+  tournament_id: string;
+  user_id: string;
+  username: string;
+}
+
+export interface TournamentPlayerUnregisteredPayload {
+  tournament_id: string;
+  user_id: string;
+  username: string;
 }
 
 // UI types

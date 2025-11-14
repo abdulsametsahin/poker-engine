@@ -197,7 +197,7 @@ export const Lobby: React.FC = () => {
 
   // Listen for match_found WebSocket event
   useEffect(() => {
-    const handler = (message: any) => {
+    const handler = (message: { payload: { table_id: string; game_mode?: string } }) => {
       const { table_id } = message.payload;
       const gameMode = matchmaking?.gameMode || 'heads_up';
 
@@ -206,9 +206,106 @@ export const Lobby: React.FC = () => {
       showSuccess('Match found!');
     };
 
-    addMessageHandler('match_found', handler);
-    return () => removeMessageHandler('match_found');
-  }, [addMessageHandler, removeMessageHandler, matchmaking, showSuccess]);
+    const cleanup = addMessageHandler('match_found', handler);
+    return cleanup;
+  }, [addMessageHandler, matchmaking, showSuccess]);
+
+  // Listen for table events for real-time updates
+  useEffect(() => {
+    const handleTableCreated = (message: { payload: any }) => {
+      const newTable = {
+        id: message.payload.table_id,
+        game_mode: message.payload.game_mode,
+        small_blind: message.payload.small_blind,
+        big_blind: message.payload.big_blind,
+        current_players: message.payload.current_players || 0,
+        max_players: message.payload.max_players,
+        status: message.payload.status || 'waiting',
+        created_at: message.payload.created_at || new Date().toISOString(),
+      };
+
+      setActiveTables(prev => [newTable, ...prev]);
+      console.log('[Lobby] New table created:', newTable.id);
+    };
+
+    const handleTableUpdated = (message: { payload: any }) => {
+      const { table_id, status, current_players } = message.payload;
+
+      setActiveTables(prev => prev.map(table =>
+        table.id === table_id
+          ? {
+              ...table,
+              status: status !== undefined ? status : table.status,
+              current_players: current_players !== undefined ? current_players : table.current_players
+            }
+          : table
+      ));
+
+      console.log('[Lobby] Table updated:', table_id);
+    };
+
+    const handleTableCompleted = (message: { payload: any }) => {
+      const { table_id, winner_id, winner_name, completed_at } = message.payload;
+      const completedTable = activeTables.find(t => t.id === table_id);
+
+      if (completedTable) {
+        // Move to past tables
+        setPastTables(prev => [
+          {
+            ...completedTable,
+            status: 'completed',
+            winner_id,
+            winner_name,
+            completed_at: completed_at || new Date().toISOString(),
+          },
+          ...prev
+        ]);
+
+        // Remove from active
+        setActiveTables(prev => prev.filter(t => t.id !== table_id));
+        console.log('[Lobby] Table completed:', table_id);
+      }
+    };
+
+    const handleTablePlayerJoined = (message: { payload: any }) => {
+      const { table_id } = message.payload;
+
+      setActiveTables(prev => prev.map(table =>
+        table.id === table_id
+          ? { ...table, current_players: (table.current_players || 0) + 1 }
+          : table
+      ));
+
+      console.log('[Lobby] Player joined table:', table_id);
+    };
+
+    const handleTablePlayerLeft = (message: { payload: any }) => {
+      const { table_id } = message.payload;
+
+      setActiveTables(prev => prev.map(table =>
+        table.id === table_id
+          ? { ...table, current_players: Math.max(0, (table.current_players || 1) - 1) }
+          : table
+      ));
+
+      console.log('[Lobby] Player left table:', table_id);
+    };
+
+    // Register all table event handlers
+    const cleanup1 = addMessageHandler('table_created', handleTableCreated);
+    const cleanup2 = addMessageHandler('table_updated', handleTableUpdated);
+    const cleanup3 = addMessageHandler('table_completed', handleTableCompleted);
+    const cleanup4 = addMessageHandler('table_player_joined', handleTablePlayerJoined);
+    const cleanup5 = addMessageHandler('table_player_left', handleTablePlayerLeft);
+
+    return () => {
+      cleanup1();
+      cleanup2();
+      cleanup3();
+      cleanup4();
+      cleanup5();
+    };
+  }, [addMessageHandler, activeTables]);
 
   // Handle countdown complete - navigate to game
   const handleCountdownComplete = () => {
