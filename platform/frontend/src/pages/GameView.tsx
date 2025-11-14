@@ -13,7 +13,17 @@ import { WinnerDisplay, HandCompleteDisplay, TournamentPausedModal } from '../co
 import { Button } from '../components/common/Button';
 import { Badge } from '../components/common/Badge';
 import { COLORS, RADIUS, GAME } from '../constants';
-import { Player, WSMessage } from '../types';
+import {
+  Player,
+  WSMessage,
+  TableStatePayload,
+  GameUpdatePayload,
+  GameCompletePayload,
+  ErrorPayload,
+  TournamentPausedPayload,
+  TournamentResumedPayload,
+  TournamentCompletePayload
+} from '../types';
 import { addActiveTable, updateTableActivity, removeActiveTable } from '../utils/tableManager';
 
 interface TableState {
@@ -330,47 +340,48 @@ export const GameView: React.FC = () => {
       }
     };
 
-    const handleError = (message: WSMessage) => {
+    const handleError = (message: WSMessage<ErrorPayload>) => {
       showError(message.payload.message || 'An error occurred');
     };
 
-    const handleTournamentPaused = (message: WSMessage) => {
+    const handleTournamentPaused = (message: WSMessage<TournamentPausedPayload>) => {
       addConsoleLog('TOURNAMENT', 'Tournament paused - Game on hold', 'warning');
       showWarning('Tournament has been paused. Game is on hold.');
       // Update table state to paused
       setTableState(prev => prev ? { ...prev, status: 'paused' } : null);
     };
 
-    const handleTournamentResumed = (message: WSMessage) => {
+    const handleTournamentResumed = (message: WSMessage<TournamentResumedPayload>) => {
       addConsoleLog('TOURNAMENT', 'Tournament resumed - Game continuing', 'success');
       showSuccess('Tournament has been resumed. Game continues!');
       // Update table state back to playing
       setTableState(prev => prev ? { ...prev, status: 'playing' } : null);
     };
 
-    const handleTournamentComplete = (message: WSMessage) => {
+    const handleTournamentComplete = (message: WSMessage<TournamentCompletePayload>) => {
       addConsoleLog('TOURNAMENT', `Tournament complete! Winner: ${message.payload.winner_name}`, 'success');
       showSuccess(`Tournament complete! Winner: ${message.payload.winner_name}`);
       // Store tournament ID for navigation
       setTournamentId(message.payload.tournament_id);
     };
 
-    addMessageHandler('table_state', handleTableState);
-    addMessageHandler('game_update', handleGameUpdate);
-    addMessageHandler('game_complete', handleGameComplete);
-    addMessageHandler('error', handleError);
-    addMessageHandler('tournament_paused', handleTournamentPaused);
-    addMessageHandler('tournament_resumed', handleTournamentResumed);
-    addMessageHandler('tournament_complete', handleTournamentComplete);
+    // Register handlers and store cleanup functions
+    const cleanup1 = addMessageHandler('table_state', handleTableState);
+    const cleanup2 = addMessageHandler('game_update', handleGameUpdate);
+    const cleanup3 = addMessageHandler('game_complete', handleGameComplete);
+    const cleanup4 = addMessageHandler('error', handleError);
+    const cleanup5 = addMessageHandler('tournament_paused', handleTournamentPaused);
+    const cleanup6 = addMessageHandler('tournament_resumed', handleTournamentResumed);
+    const cleanup7 = addMessageHandler('tournament_complete', handleTournamentComplete);
 
     return () => {
-      removeMessageHandler('table_state');
-      removeMessageHandler('game_update');
-      removeMessageHandler('game_complete');
-      removeMessageHandler('error');
-      removeMessageHandler('tournament_paused');
-      removeMessageHandler('tournament_resumed');
-      removeMessageHandler('tournament_complete');
+      cleanup1();
+      cleanup2();
+      cleanup3();
+      cleanup4();
+      cleanup5();
+      cleanup6();
+      cleanup7();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tableId, addMessageHandler, removeMessageHandler, showSuccess, showError, showWarning, addConsoleLog]);

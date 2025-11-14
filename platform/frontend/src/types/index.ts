@@ -124,15 +124,92 @@ export type WSMessageType =
   | 'game_update'
   | 'game_complete'
   | 'player_action'
+  | 'tournament_paused'
+  | 'tournament_resumed'
+  | 'tournament_complete'
+  | 'player_eliminated'
+  | 'blind_level_increased'
   | 'error';
 
+// WebSocket payload type definitions
 export interface MatchFoundPayload {
   table_id: string;
+  game_mode?: GameMode;
+  players?: string[];
 }
 
 export interface PlayerActionPayload {
   action: PlayerAction;
   amount?: number;
+}
+
+export interface TableStatePayload extends TableState {
+  // TableState already has all needed properties
+}
+
+export interface GameUpdatePayload extends TableState {
+  last_action?: {
+    player_id: string;
+    action: PlayerAction;
+    amount?: number;
+  };
+}
+
+export interface GameCompletePayload {
+  table_id?: string;
+  winner_id: string;
+  winner_name?: string;
+  winner_username?: string;
+  final_chip_count: number;
+  players_defeated?: number;
+  total_hands?: number;
+  biggest_pot?: number;
+  best_hand?: string;
+}
+
+export interface TournamentPausedPayload {
+  tournament_id: string;
+  reason?: string;
+  paused_at?: string;
+}
+
+export interface TournamentResumedPayload {
+  tournament_id: string;
+  resumed_at?: string;
+}
+
+export interface TournamentCompletePayload {
+  tournament_id: string;
+  winner_id: string;
+  winner_name: string;
+  final_standings?: Array<{
+    player_id: string;
+    player_name: string;
+    position: number;
+    prize?: number;
+  }>;
+}
+
+export interface PlayerEliminatedPayload {
+  tournament_id: string;
+  player_id: string;
+  player_name: string;
+  position: number;
+  eliminated_by?: string;
+}
+
+export interface BlindLevelIncreasedPayload {
+  tournament_id: string;
+  level: number;
+  small_blind: number;
+  big_blind: number;
+  ante?: number;
+}
+
+export interface ErrorPayload {
+  code?: string;
+  message: string;
+  details?: any;
 }
 
 // UI types

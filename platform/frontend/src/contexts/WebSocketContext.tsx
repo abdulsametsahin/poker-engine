@@ -9,7 +9,7 @@ interface WebSocketContextType {
   isConnected: boolean;
   lastMessage: WSMessage | null;
   sendMessage: (message: WSMessage) => void;
-  addMessageHandler: (type: string, handler: MessageHandler) => void;
+  addMessageHandler: (type: string, handler: MessageHandler) => () => void;
   removeMessageHandler: (type: string) => void;
 }
 
@@ -35,7 +35,7 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptRef = useRef(0);
-  const messageHandlersRef = useRef<Map<string, MessageHandler>>(new Map());
+  const messageHandlersRef = useRef<Map<string, MessageHandler[]>>(new Map());
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const getReconnectDelay = useCallback(() => {
@@ -109,10 +109,16 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
           const message: WSMessage = JSON.parse(event.data);
           setLastMessage(message);
 
-          // Call registered handler for this message type
-          const handler = messageHandlersRef.current.get(message.type);
-          if (handler) {
-            handler(message);
+          // Call all registered handlers for this message type
+          const handlers = messageHandlersRef.current.get(message.type);
+          if (handlers && handlers.length > 0) {
+            handlers.forEach(handler => {
+              try {
+                handler(message);
+              } catch (error) {
+                console.error(`Error in handler for message type "${message.type}":`, error);
+              }
+            });
           }
         } catch (error) {
           console.error('Failed to parse WebSocket message:', error);
@@ -150,7 +156,20 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
   }, []);
 
   const addMessageHandler = useCallback((type: string, handler: MessageHandler) => {
-    messageHandlersRef.current.set(type, handler);
+    const handlers = messageHandlersRef.current.get(type) || [];
+    handlers.push(handler);
+    messageHandlersRef.current.set(type, handlers);
+
+    // Return cleanup function to remove this specific handler
+    return () => {
+      const currentHandlers = messageHandlersRef.current.get(type) || [];
+      const filtered = currentHandlers.filter(h => h !== handler);
+      if (filtered.length === 0) {
+        messageHandlersRef.current.delete(type);
+      } else {
+        messageHandlersRef.current.set(type, filtered);
+      }
+    };
   }, []);
 
   const removeMessageHandler = useCallback((type: string) => {

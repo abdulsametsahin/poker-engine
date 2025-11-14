@@ -173,7 +173,7 @@ export const TournamentDetail: React.FC = () => {
       }
     };
 
-    const handleTournamentPaused = (message: any) => {
+    const handleTournamentPaused = (message: { payload: { tournament_id: string; tournament?: Tournament } }) => {
       if (message.payload?.tournament_id === id) {
         // Update tournament status to paused
         if (message.payload.tournament) {
@@ -185,7 +185,7 @@ export const TournamentDetail: React.FC = () => {
       }
     };
 
-    const handleTournamentResumed = (message: any) => {
+    const handleTournamentResumed = (message: { payload: { tournament_id: string; tournament?: Tournament } }) => {
       if (message.payload?.tournament_id === id) {
         // Update tournament status to in_progress
         if (message.payload.tournament) {
@@ -197,7 +197,7 @@ export const TournamentDetail: React.FC = () => {
       }
     };
 
-    const handleBlindIncrease = (message: any) => {
+    const handleBlindIncrease = (message: { payload: { tournament_id: string; current_level: number } }) => {
       if (message.payload?.tournament_id === id) {
         setTournament(prev => prev ? {
           ...prev,
@@ -207,35 +207,36 @@ export const TournamentDetail: React.FC = () => {
       }
     };
 
-    const handlePlayerEliminated = (message: any) => {
+    const handlePlayerEliminated = (message: { payload: { tournament_id: string } }) => {
       if (message.payload?.tournament_id === id) {
         fetchTournamentData();
       }
     };
 
-    const handleTournamentComplete = (message: any) => {
+    const handleTournamentComplete = (message: { payload: { tournament_id: string; winner_name: string } }) => {
       if (message.payload?.tournament_id === id) {
         fetchTournamentData();
         showSuccess(`Tournament complete! Winner: ${message.payload.winner_name}`);
       }
     };
 
-    addMessageHandler('tournament_update', handleTournamentUpdate);
-    addMessageHandler('tournament_started', handleTournamentStarted);
-    addMessageHandler('tournament_paused', handleTournamentPaused);
-    addMessageHandler('tournament_resumed', handleTournamentResumed);
-    addMessageHandler('blind_level_increased', handleBlindIncrease);
-    addMessageHandler('player_eliminated', handlePlayerEliminated);
-    addMessageHandler('tournament_complete', handleTournamentComplete);
+    // Register handlers and store cleanup functions
+    const cleanup1 = addMessageHandler('tournament_update', handleTournamentUpdate);
+    const cleanup2 = addMessageHandler('tournament_started', handleTournamentStarted);
+    const cleanup3 = addMessageHandler('tournament_paused', handleTournamentPaused);
+    const cleanup4 = addMessageHandler('tournament_resumed', handleTournamentResumed);
+    const cleanup5 = addMessageHandler('blind_level_increased', handleBlindIncrease);
+    const cleanup6 = addMessageHandler('player_eliminated', handlePlayerEliminated);
+    const cleanup7 = addMessageHandler('tournament_complete', handleTournamentComplete);
 
     return () => {
-      removeMessageHandler('tournament_update');
-      removeMessageHandler('tournament_started');
-      removeMessageHandler('tournament_paused');
-      removeMessageHandler('tournament_resumed');
-      removeMessageHandler('blind_level_increased');
-      removeMessageHandler('player_eliminated');
-      removeMessageHandler('tournament_complete');
+      cleanup1();
+      cleanup2();
+      cleanup3();
+      cleanup4();
+      cleanup5();
+      cleanup6();
+      cleanup7();
     };
   }, [id, addMessageHandler, removeMessageHandler, fetchTournamentData, showSuccess]);
 

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, ReactNode, useCallback } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useCallback, useRef } from 'react';
 import { Snackbar, Alert, AlertColor, Slide, SlideProps } from '@mui/material';
 import { ToastMessage } from '../types';
 import { GAME } from '../constants';
@@ -33,8 +33,18 @@ function SlideTransition(props: SlideProps) {
 export const ToastProvider: React.FC<ToastProviderProps> = ({ children }) => {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [currentToast, setCurrentToast] = useState<ToastMessage | null>(null);
+  const recentToastsRef = useRef<Set<string>>(new Set());
 
   const showToast = useCallback((message: string, type: AlertColor = 'info') => {
+    // Create a hash key for deduplication
+    const toastKey = `${type}:${message}`;
+
+    // Check if this exact toast was shown recently (within 2 seconds)
+    if (recentToastsRef.current.has(toastKey)) {
+      console.log(`Toast deduplicated: "${message}"`);
+      return;
+    }
+
     const newToast: ToastMessage = {
       id: generateId(),
       message,
@@ -43,6 +53,14 @@ export const ToastProvider: React.FC<ToastProviderProps> = ({ children }) => {
     };
 
     setToasts((prev) => [...prev, newToast]);
+
+    // Mark this toast as shown
+    recentToastsRef.current.add(toastKey);
+
+    // Remove from deduplication set after 2 seconds
+    setTimeout(() => {
+      recentToastsRef.current.delete(toastKey);
+    }, 2000);
 
     // If no toast is currently showing, show this one
     if (!currentToast) {

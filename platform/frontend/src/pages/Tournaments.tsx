@@ -107,51 +107,51 @@ export const Tournaments: React.FC = () => {
 
   // Setup WebSocket handlers for real-time tournament updates
   useEffect(() => {
-    const handleTournamentPaused = (message: any) => {
+    const handleTournamentPaused = (message: { payload: { tournament_id: string } }) => {
       const tournamentId = message.payload?.tournament_id;
       if (tournamentId) {
         // Update the tournament status in the list
-        setTournaments(prev => prev.map(t => 
-          t.id === tournamentId 
+        setTournaments(prev => prev.map(t =>
+          t.id === tournamentId
             ? { ...t, status: 'paused' }
             : t
         ));
       }
     };
 
-    const handleTournamentResumed = (message: any) => {
+    const handleTournamentResumed = (message: { payload: { tournament_id: string } }) => {
       const tournamentId = message.payload?.tournament_id;
       if (tournamentId) {
         // Update the tournament status in the list
-        setTournaments(prev => prev.map(t => 
-          t.id === tournamentId 
+        setTournaments(prev => prev.map(t =>
+          t.id === tournamentId
             ? { ...t, status: 'in_progress' }
             : t
         ));
       }
     };
 
-    const handleTournamentUpdate = (message: any) => {
+    const handleTournamentUpdate = (message: { payload: { tournament?: Tournament } }) => {
       if (message.payload?.tournament) {
         const updatedTournament = message.payload.tournament;
-        setTournaments(prev => prev.map(t => 
-          t.id === updatedTournament.id 
+        setTournaments(prev => prev.map(t =>
+          t.id === updatedTournament.id
             ? { ...t, ...updatedTournament }
             : t
         ));
       }
     };
 
-    addMessageHandler('tournament_paused', handleTournamentPaused);
-    addMessageHandler('tournament_resumed', handleTournamentResumed);
-    addMessageHandler('tournament_update', handleTournamentUpdate);
+    const cleanup1 = addMessageHandler('tournament_paused', handleTournamentPaused);
+    const cleanup2 = addMessageHandler('tournament_resumed', handleTournamentResumed);
+    const cleanup3 = addMessageHandler('tournament_update', handleTournamentUpdate);
 
     return () => {
-      removeMessageHandler('tournament_paused');
-      removeMessageHandler('tournament_resumed');
-      removeMessageHandler('tournament_update');
+      cleanup1();
+      cleanup2();
+      cleanup3();
     };
-  }, [addMessageHandler, removeMessageHandler]);
+  }, [addMessageHandler]);
 
   const handleCreateTournament = async () => {
     try {

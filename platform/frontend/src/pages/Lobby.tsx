@@ -197,7 +197,7 @@ export const Lobby: React.FC = () => {
 
   // Listen for match_found WebSocket event
   useEffect(() => {
-    const handler = (message: any) => {
+    const handler = (message: { payload: { table_id: string; game_mode?: string } }) => {
       const { table_id } = message.payload;
       const gameMode = matchmaking?.gameMode || 'heads_up';
 
@@ -206,9 +206,9 @@ export const Lobby: React.FC = () => {
       showSuccess('Match found!');
     };
 
-    addMessageHandler('match_found', handler);
-    return () => removeMessageHandler('match_found');
-  }, [addMessageHandler, removeMessageHandler, matchmaking, showSuccess]);
+    const cleanup = addMessageHandler('match_found', handler);
+    return cleanup;
+  }, [addMessageHandler, matchmaking, showSuccess]);
 
   // Handle countdown complete - navigate to game
   const handleCountdownComplete = () => {
