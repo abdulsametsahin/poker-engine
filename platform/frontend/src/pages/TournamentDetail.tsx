@@ -207,17 +207,78 @@ export const TournamentDetail: React.FC = () => {
       }
     };
 
-    const handlePlayerEliminated = (message: { payload: { tournament_id: string } }) => {
-      if (message.payload?.tournament_id === id) {
-        fetchTournamentData();
-      }
+    const handlePlayerEliminated = (message: { payload: {
+      tournament_id: string;
+      player_id: string;
+      player_name: string;
+      position: number;
+      eliminated_by?: string;
+    } }) => {
+      if (message.payload?.tournament_id !== id) return;
+
+      const { player_id, player_name, position } = message.payload;
+
+      // Update players list to mark as eliminated
+      setPlayers(prev => prev.map(player =>
+        player.user_id === player_id
+          ? { ...player, status: 'eliminated' as any }
+          : player
+      ));
+
+      // Update standings if we have them
+      setStandings(prev => {
+        // Check if this position exists
+        const existingIndex = prev.findIndex(s => s.position === position);
+
+        const newStanding = {
+          position,
+          player_name,
+          chips: 0,
+          status: 'eliminated',
+        };
+
+        if (existingIndex >= 0) {
+          // Update existing
+          const updated = [...prev];
+          updated[existingIndex] = newStanding;
+          return updated;
+        } else {
+          // Add new and sort
+          return [...prev, newStanding].sort((a, b) => a.position - b.position);
+        }
+      });
+
+      console.log(`[TournamentDetail] Player ${player_name} eliminated in position ${position}`);
     };
 
-    const handleTournamentComplete = (message: { payload: { tournament_id: string; winner_name: string } }) => {
-      if (message.payload?.tournament_id === id) {
-        fetchTournamentData();
-        showSuccess(`Tournament complete! Winner: ${message.payload.winner_name}`);
+    const handleTournamentComplete = (message: { payload: {
+      tournament_id: string;
+      winner_id: string;
+      winner_name: string;
+      final_standings?: Array<{
+        player_id: string;
+        player_name: string;
+        position: number;
+        prize?: number;
+      }>;
+    } }) => {
+      if (message.payload?.tournament_id !== id) return;
+
+      // Update tournament status
+      setTournament(prev => prev ? { ...prev, status: 'completed' } : null);
+
+      // Update standings if provided
+      if (message.payload.final_standings) {
+        setStandings(message.payload.final_standings.map(s => ({
+          position: s.position,
+          player_name: s.player_name,
+          chips: 0,
+          status: s.position === 1 ? 'winner' : 'eliminated',
+        })));
       }
+
+      showSuccess(`Tournament complete! Winner: ${message.payload.winner_name}`);
+      console.log('[TournamentDetail] Tournament completed');
     };
 
     // Register handlers and store cleanup functions

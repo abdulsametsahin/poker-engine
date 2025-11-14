@@ -129,6 +129,16 @@ export type WSMessageType =
   | 'tournament_complete'
   | 'player_eliminated'
   | 'blind_level_increased'
+  | 'chat_message'
+  | 'table_created'
+  | 'table_updated'
+  | 'table_completed'
+  | 'table_player_joined'
+  | 'table_player_left'
+  | 'tournament_created'
+  | 'tournament_started'
+  | 'tournament_player_registered'
+  | 'tournament_player_unregistered'
   | 'error';
 
 // WebSocket payload type definitions
@@ -210,6 +220,83 @@ export interface ErrorPayload {
   code?: string;
   message: string;
   details?: any;
+}
+
+// Chat payload
+export interface ChatMessagePayload {
+  table_id: string;
+  user_id: string;
+  username: string;
+  message: string;
+  timestamp: string;
+}
+
+// Table event payloads
+export interface TableCreatedPayload {
+  table_id: string;
+  game_mode: GameMode;
+  small_blind: number;
+  big_blind: number;
+  current_players: number;
+  max_players: number;
+  status: string;
+  created_at: string;
+}
+
+export interface TableUpdatedPayload {
+  table_id: string;
+  status?: string;
+  current_players?: number;
+}
+
+export interface TableCompletedPayload {
+  table_id: string;
+  winner_id: string;
+  winner_name: string;
+  completed_at: string;
+}
+
+export interface TablePlayerJoinedPayload {
+  table_id: string;
+  user_id: string;
+  username: string;
+  seat: number;
+}
+
+export interface TablePlayerLeftPayload {
+  table_id: string;
+  user_id: string;
+  username: string;
+  reason?: string;
+}
+
+// Tournament event payloads
+export interface TournamentCreatedPayload {
+  tournament_id: string;
+  name: string;
+  buy_in: number;
+  starting_chips: number;
+  max_players: number;
+  min_players: number;
+  status: string;
+  created_at: string;
+}
+
+export interface TournamentStartedPayload {
+  tournament_id: string;
+  started_at: string;
+}
+
+export interface TournamentPlayerRegisteredPayload {
+  tournament_id: string;
+  user_id: string;
+  username: string;
+}
+
+export interface TournamentPlayerUnregisteredPayload {
+  tournament_id: string;
+  user_id: string;
+  username: string;
 }
 
 // UI types

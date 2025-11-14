@@ -22,7 +22,8 @@ import {
   ErrorPayload,
   TournamentPausedPayload,
   TournamentResumedPayload,
-  TournamentCompletePayload
+  TournamentCompletePayload,
+  ChatMessagePayload
 } from '../types';
 import { addActiveTable, updateTableActivity, removeActiveTable } from '../utils/tableManager';
 
@@ -389,6 +390,25 @@ export const GameView: React.FC = () => {
       setTournamentId(message.payload.tournament_id);
     };
 
+    const handleChatMessage = (message: WSMessage<ChatMessagePayload>) => {
+      // Filter by table_id - only process messages for our table
+      if (message.payload.table_id !== tableId) {
+        console.log(`[GameView] Ignoring chat_message for table ${message.payload.table_id}, current: ${tableId}`);
+        return;
+      }
+
+      const newMessage = {
+        id: `${Date.now()}-${Math.random()}`,
+        userId: message.payload.user_id,
+        username: message.payload.username,
+        message: message.payload.message,
+        timestamp: new Date(message.payload.timestamp),
+      };
+
+      setChatMessages(prev => [...prev, newMessage]);
+      addConsoleLog('CHAT', `${message.payload.username}: ${message.payload.message}`, 'info');
+    };
+
     // Register handlers and store cleanup functions
     const cleanup1 = addMessageHandler('table_state', handleTableState);
     const cleanup2 = addMessageHandler('game_update', handleGameUpdate);
@@ -397,6 +417,7 @@ export const GameView: React.FC = () => {
     const cleanup5 = addMessageHandler('tournament_paused', handleTournamentPaused);
     const cleanup6 = addMessageHandler('tournament_resumed', handleTournamentResumed);
     const cleanup7 = addMessageHandler('tournament_complete', handleTournamentComplete);
+    const cleanup8 = addMessageHandler('chat_message', handleChatMessage);
 
     return () => {
       cleanup1();
@@ -406,6 +427,7 @@ export const GameView: React.FC = () => {
       cleanup5();
       cleanup6();
       cleanup7();
+      cleanup8();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tableId, addMessageHandler, removeMessageHandler, showSuccess, showError, showWarning, addConsoleLog]);
@@ -467,17 +489,34 @@ export const GameView: React.FC = () => {
   }, [pendingAction, isMyTurn, tableState, generateRequestId, sendMessage, addConsoleLog]);
 
   const handleSendChatMessage = useCallback((message: string) => {
-    // For now, just add to local state
-    // TODO: Implement WebSocket chat when backend supports it
-    const username = user?.username || 'Anonymous';
-    setChatMessages(prev => [...prev, {
-      id: Date.now().toString(),
-      userId: currentUserId || '',
+    if (!message.trim() || !tableId || !user) return;
+
+    const username = user.username || 'Anonymous';
+
+    // Optimistic update - add to local state immediately
+    const tempMessage = {
+      id: `temp-${Date.now()}`,
+      userId: currentUserId || user.id,
       username,
-      message,
+      message: message.trim(),
       timestamp: new Date(),
-    }]);
-  }, [currentUserId, user]);
+    };
+    setChatMessages(prev => [...prev, tempMessage]);
+
+    // Send to server via WebSocket
+    sendMessage({
+      type: 'chat_message',
+      payload: {
+        table_id: tableId,
+        user_id: user.id,
+        username,
+        message: message.trim(),
+        timestamp: new Date().toISOString(),
+      }
+    });
+
+    addConsoleLog('CHAT', `Sent: ${message.trim()}`, 'debug');
+  }, [currentUserId, user, tableId, sendMessage, addConsoleLog]);
 
   const handlePlayAgain = useCallback(() => {
     // Navigate to lobby and automatically join queue with same game mode
