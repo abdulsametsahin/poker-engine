@@ -16,9 +16,6 @@ import { COLORS, RADIUS, GAME } from '../constants';
 import {
   Player,
   WSMessage,
-  TableStatePayload,
-  GameUpdatePayload,
-  GameCompletePayload,
   ErrorPayload,
   TournamentPausedPayload,
   TournamentResumedPayload,

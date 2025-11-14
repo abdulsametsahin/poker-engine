@@ -230,11 +230,11 @@ export const TournamentDetail: React.FC = () => {
         // Check if this position exists
         const existingIndex = prev.findIndex(s => s.position === position);
 
-        const newStanding = {
+        const newStanding: Standing = {
+          user_id: player_id,
+          username: player_name,
           position,
-          player_name,
-          chips: 0,
-          status: 'eliminated',
+          prize_amount: 0,
         };
 
         if (existingIndex >= 0) {
@@ -244,7 +244,7 @@ export const TournamentDetail: React.FC = () => {
           return updated;
         } else {
           // Add new and sort
-          return [...prev, newStanding].sort((a, b) => a.position - b.position);
+          return [...prev, newStanding].sort((a, b) => (a.position ?? 999) - (b.position ?? 999));
         }
       });
 
@@ -270,10 +270,10 @@ export const TournamentDetail: React.FC = () => {
       // Update standings if provided
       if (message.payload.final_standings) {
         setStandings(message.payload.final_standings.map(s => ({
+          user_id: s.player_id,
+          username: s.player_name,
           position: s.position,
-          player_name: s.player_name,
-          chips: 0,
-          status: s.position === 1 ? 'winner' : 'eliminated',
+          prize_amount: s.prize || 0,
         })));
       }
 

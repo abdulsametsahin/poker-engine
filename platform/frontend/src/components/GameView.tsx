@@ -8,7 +8,7 @@ import {
   Typography,
 } from '@mui/material';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { useWebSocket } from '../contexts/WebSocketContext';
 import PokerTable from './PokerTable';
 import WinnerDisplay from './WinnerDisplay';
 
@@ -49,14 +49,14 @@ interface TableState {
 export const GameView: React.FC = () => {
   const { tableId } = useParams<{ tableId: string }>();
   const navigate = useNavigate();
-  const { isConnected, lastMessage, send } = useWebSocket();
+  const { isConnected, lastMessage, sendMessage } = useWebSocket();
   const [tableState, setTableState] = useState<TableState | null>(null);
   const [raiseAmount, setRaiseAmount] = useState('');
   const [showWinners, setShowWinners] = useState(false);
 
   useEffect(() => {
     if (isConnected && tableId) {
-      send({
+      sendMessage({
         type: 'subscribe_table',
         payload: { table_id: tableId },
       });
@@ -116,7 +116,7 @@ export const GameView: React.FC = () => {
   }, [lastMessage, tableId, tableState?.status, navigate]);
 
   const handleAction = (action: string, amount?: number) => {
-    send({
+    sendMessage({
       type: 'game_action',
       payload: { action, amount: amount || 0 },
     });

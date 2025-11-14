@@ -31,7 +31,7 @@ function SlideTransition(props: SlideProps) {
 }
 
 export const ToastProvider: React.FC<ToastProviderProps> = ({ children }) => {
-  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [, setToasts] = useState<ToastMessage[]>([]);
   const [currentToast, setCurrentToast] = useState<ToastMessage | null>(null);
   const recentToastsRef = useRef<Set<string>>(new Set());
 

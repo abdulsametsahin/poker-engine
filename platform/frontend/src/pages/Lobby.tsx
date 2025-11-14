@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Container, Typography, Stack, Dialog, DialogContent, LinearProgress, Tabs, Tab, IconButton } from '@mui/material';
-import { PlayArrow, Group, EmojiEvents, History, Close, AccessTime } from '@mui/icons-material';
+import { PlayArrow, Group, EmojiEvents, History, Close } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { tableAPI, matchmakingAPI } from '../services/api';
 import { useWebSocket } from '../contexts/WebSocketContext';
@@ -14,7 +14,7 @@ import { Chip } from '../components/common/Chip';
 import { EmptyState } from '../components/common/EmptyState';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { MatchFoundModal } from '../components/modals/MatchFoundModal';
-import { COLORS, ROUTES } from '../constants';
+import { COLORS } from '../constants';
 import { formatTimestamp } from '../utils';
 
 interface Table {
@@ -154,8 +154,7 @@ const GameModeCard: React.FC<GameModeCardProps> = ({
 export const Lobby: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isConnected, lastMessage, addMessageHandler, removeMessageHandler } = useWebSocket();
-  const { user } = useAuth();
+  const { isConnected, addMessageHandler } = useWebSocket();
   const { showError, showSuccess } = useToast();
   const [activeTab, setActiveTab] = useState(0);
   const [activeTables, setActiveTables] = useState<Table[]>([]);
@@ -213,11 +212,15 @@ export const Lobby: React.FC = () => {
   // Listen for table events for real-time updates
   useEffect(() => {
     const handleTableCreated = (message: { payload: any }) => {
-      const newTable = {
+      const newTable: Table = {
         id: message.payload.table_id,
+        name: message.payload.name || `Table ${message.payload.table_id.slice(0, 8)}`,
+        game_type: message.payload.game_type || 'texas_holdem',
         game_mode: message.payload.game_mode,
         small_blind: message.payload.small_blind,
         big_blind: message.payload.big_blind,
+        min_buy_in: message.payload.min_buy_in || message.payload.small_blind * 20,
+        max_buy_in: message.payload.max_buy_in || message.payload.big_blind * 100,
         current_players: message.payload.current_players || 0,
         max_players: message.payload.max_players,
         status: message.payload.status || 'waiting',
@@ -354,6 +357,7 @@ export const Lobby: React.FC = () => {
       // Clear the state
       navigate(location.pathname, { replace: true, state: {} });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location]);
 
   const handleCancelMatchmaking = async () => {
