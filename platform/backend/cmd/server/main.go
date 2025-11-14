@@ -8,12 +8,14 @@ import (
 	"poker-platform/backend/internal/models"
 	redisClient "poker-platform/backend/internal/redis"
 	"poker-platform/backend/internal/server/config"
+	"poker-platform/backend/internal/middleware"
 	"poker-platform/backend/internal/server/events"
 	"poker-platform/backend/internal/server/game"
 	"poker-platform/backend/internal/server/handlers"
 	"poker-platform/backend/internal/server/matchmaking"
 	serverTournament "poker-platform/backend/internal/server/tournament"
 	"poker-platform/backend/internal/server/websocket"
+	"poker-platform/backend/internal/validation"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -23,8 +25,9 @@ import (
 )
 
 var (
-	appConfig *config.AppConfig
-	bridge    *game.GameBridge
+	appConfig         *config.AppConfig
+	bridge            *game.GameBridge
+	actionRateLimiter *middleware.WebSocketActionLimiter
 )
 
 func main() {
@@ -66,6 +69,10 @@ func main() {
 
 	// Initialize game bridge
 	bridge = game.NewGameBridge()
+
+	// Initialize rate limiter for game actions
+	actionRateLimiter = middleware.NewWebSocketActionLimiter()
+	defer actionRateLimiter.Stop()
 
 	// Setup tournament callbacks
 	setupTournamentCallbacks()
@@ -278,20 +285,177 @@ func handleWSMessageWrapper(c *websocket.Client, msg websocket.WSMessage) {
 	case "subscribe_table":
 		// log
 		log.Printf("Client %s subscribing to table", c.UserID)
-		payload := msg.Payload.(map[string]interface{})
-		tableID := payload["table_id"].(string)
+
+		// CRITICAL: Validate payload type before casting
+		payload, ok := msg.Payload.(map[string]interface{})
+		if !ok {
+			log.Printf("[VALIDATION] Invalid payload type for subscribe_table from user %s", c.UserID)
+			websocket.SendToClient(c, websocket.WSMessage{
+				Type: "error",
+				Payload: map[string]interface{}{
+					"message": "Invalid message format",
+					"code":    "INVALID_PAYLOAD",
+				},
+			})
+			return
+		}
+
+		// CRITICAL: Validate table_id exists and is correct type
+		tableIDRaw, ok := payload["table_id"]
+		if !ok {
+			log.Printf("[VALIDATION] Missing table_id from user %s", c.UserID)
+			websocket.SendToClient(c, websocket.WSMessage{
+				Type: "error",
+				Payload: map[string]interface{}{
+					"message": "Missing table_id",
+					"code":    "MISSING_TABLE_ID",
+				},
+			})
+			return
+		}
+
+		tableID, ok := tableIDRaw.(string)
+		if !ok {
+			log.Printf("[VALIDATION] Invalid table_id type from user %s", c.UserID)
+			websocket.SendToClient(c, websocket.WSMessage{
+				Type: "error",
+				Payload: map[string]interface{}{
+					"message": "Invalid table_id format",
+					"code":    "INVALID_TABLE_ID",
+				},
+			})
+			return
+		}
+
+		// CRITICAL: Validate table_id format
+		if err := validation.ValidateUUID(tableID); err != nil {
+			log.Printf("[VALIDATION] Invalid table_id format from user %s: %v", c.UserID, err)
+			websocket.SendToClient(c, websocket.WSMessage{
+				Type: "error",
+				Payload: map[string]interface{}{
+					"message": "Invalid table_id format",
+					"code":    "INVALID_TABLE_ID",
+				},
+			})
+			return
+		}
+
 		c.TableID = tableID
 		websocket.SendTableState(c, tableID, getTableFunc, game.SumSidePots)
 		log.Printf("Sent table state to client %s for table %s", c.UserID, tableID)
 
 	case "game_action":
-		payload := msg.Payload.(map[string]interface{})
-		action := payload["action"].(string)
-		amount := 0
-		if a, ok := payload["amount"].(float64); ok {
-			amount = int(a)
+		// CRITICAL: Rate limiting to prevent action spam and DoS attacks
+		if !actionRateLimiter.AllowAction(c.UserID) {
+			log.Printf("[RATELIMIT] Action denied for user %s - rate limit exceeded", c.UserID)
+			websocket.SendToClient(c, websocket.WSMessage{
+				Type: "error",
+				Payload: map[string]interface{}{
+					"message": "Too many actions. Please slow down.",
+					"code":    "RATE_LIMIT_EXCEEDED",
+				},
+			})
+			return
 		}
-		events.ProcessGameAction(c.UserID, c.TableID, action, amount, appConfig.Database, bridge)
+
+		// CRITICAL: Validate payload type before casting to prevent panic
+		payload, ok := msg.Payload.(map[string]interface{})
+		if !ok {
+			log.Printf("[VALIDATION] Invalid payload type for game_action from user %s", c.UserID)
+			websocket.SendToClient(c, websocket.WSMessage{
+				Type: "error",
+				Payload: map[string]interface{}{
+					"message": "Invalid message format",
+					"code":    "INVALID_PAYLOAD",
+				},
+			})
+			return
+		}
+
+		// CRITICAL: Validate action field exists and is correct type
+		actionRaw, ok := payload["action"]
+		if !ok {
+			log.Printf("[VALIDATION] Missing action from user %s", c.UserID)
+			websocket.SendToClient(c, websocket.WSMessage{
+				Type: "error",
+				Payload: map[string]interface{}{
+					"message": "Missing action field",
+					"code":    "MISSING_ACTION",
+				},
+			})
+			return
+		}
+
+		action, ok := actionRaw.(string)
+		if !ok {
+			log.Printf("[VALIDATION] Invalid action type from user %s", c.UserID)
+			websocket.SendToClient(c, websocket.WSMessage{
+				Type: "error",
+				Payload: map[string]interface{}{
+					"message": "Invalid action format",
+					"code":    "INVALID_ACTION",
+				},
+			})
+			return
+		}
+
+		// CRITICAL: Validate action is one of the allowed values
+		if err := validation.ValidateGameAction(action); err != nil {
+			log.Printf("[VALIDATION] Invalid game action '%s' from user %s: %v", action, c.UserID, err)
+			websocket.SendToClient(c, websocket.WSMessage{
+				Type: "error",
+				Payload: map[string]interface{}{
+					"message": "Invalid action: " + err.Error(),
+					"code":    "INVALID_ACTION",
+				},
+			})
+			return
+		}
+
+		// Extract and validate amount (optional, defaults to 0)
+		amount := 0
+		if amountRaw, ok := payload["amount"]; ok {
+			// Handle both float64 (from JSON) and int
+			switch v := amountRaw.(type) {
+			case float64:
+				amount = int(v)
+			case int:
+				amount = v
+			default:
+				log.Printf("[VALIDATION] Invalid amount type from user %s", c.UserID)
+				websocket.SendToClient(c, websocket.WSMessage{
+					Type: "error",
+					Payload: map[string]interface{}{
+						"message": "Invalid amount format",
+						"code":    "INVALID_AMOUNT",
+					},
+				})
+				return
+			}
+		}
+
+		// CRITICAL: Validate amount is reasonable for the action
+		if err := validation.ValidateGameActionAmount(action, amount); err != nil {
+			log.Printf("[VALIDATION] Invalid amount %d for action '%s' from user %s: %v", amount, action, c.UserID, err)
+			websocket.SendToClient(c, websocket.WSMessage{
+				Type: "error",
+				Payload: map[string]interface{}{
+					"message": "Invalid amount: " + err.Error(),
+					"code":    "INVALID_AMOUNT",
+				},
+			})
+			return
+		}
+
+		// Extract request_id for idempotency (optional for backward compatibility)
+		requestID := ""
+		if ridRaw, ok := payload["request_id"]; ok {
+			if rid, ok := ridRaw.(string); ok {
+				requestID = rid
+			}
+		}
+
+		events.ProcessGameAction(c.UserID, c.TableID, action, requestID, amount, appConfig.Database, bridge)
 
 	case "ping":
 		websocket.SendToClient(c, websocket.WSMessage{Type: "pong"})

@@ -227,3 +227,29 @@ func (t *Table) Stop() {
 		t.blindsTimer.Stop()
 	}
 }
+
+// UpdateBlinds updates the blind levels for the next hand
+// This is safe to call during an active hand as it only affects future hands
+// CRITICAL: This method is thread-safe and coordinates with the game mutex
+func (t *Table) UpdateBlinds(smallBlind, bigBlind int) error {
+	// Acquire game lock to safely modify config
+	// This prevents race conditions with StartNewHand() which reads the config
+	if t.game != nil {
+		t.game.mu.Lock()
+		defer t.game.mu.Unlock()
+	}
+
+	// Validate blind amounts
+	if smallBlind <= 0 || bigBlind <= 0 {
+		return fmt.Errorf("blind amounts must be positive")
+	}
+	if smallBlind >= bigBlind {
+		return fmt.Errorf("small blind must be less than big blind")
+	}
+
+	// Update config - this will be used for the next hand
+	t.model.Config.SmallBlind = smallBlind
+	t.model.Config.BigBlind = bigBlind
+
+	return nil
+}

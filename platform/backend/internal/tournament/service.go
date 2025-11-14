@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Service handles tournament operations
@@ -145,9 +146,13 @@ func (s *Service) RegisterPlayer(tournamentID, userID string) error {
 		}
 	}()
 
-	// Get tournament with lock
+	// CRITICAL: Get tournament with row-level lock to prevent race conditions
+	// Without FOR UPDATE, two concurrent registrations can both see available spots
+	// and exceed max_players or corrupt prize_pool calculations
 	var tournament models.Tournament
-	if err := tx.Clauses().Where("id = ?", tournamentID).First(&tournament).Error; err != nil {
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ?", tournamentID).
+		First(&tournament).Error; err != nil {
 		tx.Rollback()
 		if err == gorm.ErrRecordNotFound {
 			return ErrTournamentNotFound
@@ -176,10 +181,12 @@ func (s *Service) RegisterPlayer(tournamentID, userID string) error {
 	}
 
 	// Deduct buy-in from user using currency service (with validation and audit trail)
+	// CRITICAL: Use DeductChipsWithTx to ensure buy-in deduction is atomic with registration
 	ctx := context.Background()
 	description := fmt.Sprintf("Buy-in for tournament: %s", tournament.Name)
-	if err := s.currencyService.DeductChips(
+	if err := s.currencyService.DeductChipsWithTx(
 		ctx,
+		tx,
 		userID,
 		tournament.BuyIn,
 		currency.TxTypeTournamentBuyIn,
@@ -274,10 +281,12 @@ func (s *Service) UnregisterPlayer(tournamentID, userID string) error {
 	}
 
 	// Refund buy-in to user using currency service (with audit trail)
+	// CRITICAL: Use AddChipsWithTx to ensure refund is atomic with unregistration
 	ctx := context.Background()
 	description := fmt.Sprintf("Refund for tournament: %s", tournament.Name)
-	if err := s.currencyService.AddChips(
+	if err := s.currencyService.AddChipsWithTx(
 		ctx,
+		tx,
 		userID,
 		tournament.BuyIn,
 		currency.TxTypeTournamentRefund,
@@ -361,11 +370,13 @@ func (s *Service) CancelTournament(tournamentID, userID string) error {
 	}
 
 	// Refund all players using currency service (with audit trail)
+	// CRITICAL: Use AddChipsWithTx to ensure all refunds are atomic with tournament cancellation
 	ctx := context.Background()
 	for _, player := range players {
 		description := fmt.Sprintf("Refund from cancelled tournament: %s", tournament.Name)
-		if err := s.currencyService.AddChips(
+		if err := s.currencyService.AddChipsWithTx(
 			ctx,
+			tx,
 			player.UserID,
 			tournament.BuyIn,
 			currency.TxTypeTournamentRefund,

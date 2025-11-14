@@ -1,14 +1,17 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
 	"poker-platform/backend/internal/db"
 	"poker-platform/backend/internal/models"
+	"poker-platform/backend/internal/validation"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // HandleGetTables returns all available tables
@@ -188,14 +191,29 @@ func HandleCreateTable(
 		return
 	}
 
-	table.ID = uuid.New().String()
-	table.Status = "waiting"
-
-	if err := database.Create(&table).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create table"})
+	// CRITICAL: Validate all table parameters to prevent invalid game states
+	if err := validation.ValidateTableName(table.Name); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
+	if err := validation.ValidateBlinds(table.SmallBlind, table.BigBlind); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := validation.ValidateMaxPlayers(table.MaxPlayers); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validate game type enum
+	if err := validation.ValidateEnum(table.GameType, []string{"cash", "tournament"}, "game type"); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validate buy-in range
 	minBuyIn := 100
 	if table.MinBuyIn != nil {
 		minBuyIn = *table.MinBuyIn
@@ -203,6 +221,19 @@ func HandleCreateTable(
 	maxBuyIn := 2000
 	if table.MaxBuyIn != nil {
 		maxBuyIn = *table.MaxBuyIn
+	}
+
+	if err := validation.ValidateBuyInRange(minBuyIn, maxBuyIn); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	table.ID = uuid.New().String()
+	table.Status = "waiting"
+
+	if err := database.Create(&table).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create table"})
+		return
 	}
 
 	createEngineTableFunc(table.ID, table.GameType, table.SmallBlind, table.BigBlind, table.MaxPlayers, minBuyIn, maxBuyIn)
@@ -219,11 +250,23 @@ func HandleJoinTable(
 	tableID := c.Param("id")
 	userID := c.GetString("user_id")
 
+	// CRITICAL: Validate table ID format
+	if err := validation.ValidateUUID(tableID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid table ID"})
+		return
+	}
+
 	var buyIn struct {
 		BuyIn int `json:"buy_in"`
 	}
 	if err := c.ShouldBindJSON(&buyIn); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	// CRITICAL: Validate buy-in amount
+	if err := validation.ValidateBuyIn(buyIn.BuyIn); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -244,6 +287,16 @@ func HandleJoinTable(
 		return
 	}
 
+	// Validate buy-in is within table limits
+	if table.MinBuyIn != nil && buyIn.BuyIn < *table.MinBuyIn {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Buy-in below table minimum"})
+		return
+	}
+	if table.MaxBuyIn != nil && buyIn.BuyIn > *table.MaxBuyIn {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Buy-in exceeds table maximum"})
+		return
+	}
+
 	var currentPlayers int64
 	database.Model(&models.TableSeat{}).Where("table_id = ? AND left_at IS NULL", tableID).Count(&currentPlayers)
 
@@ -254,20 +307,35 @@ func HandleJoinTable(
 
 	seatNumber := int(currentPlayers)
 
-	tableSeat := models.TableSeat{
-		TableID:    tableID,
-		UserID:     userID,
-		SeatNumber: seatNumber,
-		Chips:      buyIn.BuyIn,
-		Status:     "active",
-	}
+	// CRITICAL: Use transaction to ensure atomic operations
+	// If chip deduction fails, table seat creation is rolled back
+	// If table seat creation fails, chip deduction is rolled back
+	err := database.Transaction(func(tx *gorm.DB) error {
+		// Create table seat record
+		tableSeat := models.TableSeat{
+			TableID:    tableID,
+			UserID:     userID,
+			SeatNumber: seatNumber,
+			Chips:      buyIn.BuyIn,
+			Status:     "active",
+		}
 
-	if err := database.Create(&tableSeat).Error; err != nil {
+		if err := tx.Create(&tableSeat).Error; err != nil {
+			return fmt.Errorf("failed to create table seat: %w", err)
+		}
+
+		// Deduct chips from user (atomic with seat creation)
+		if err := tx.Model(&models.User{}).Where("id = ?", userID).Update("chips", user.Chips-buyIn.BuyIn).Error; err != nil {
+			return fmt.Errorf("failed to deduct chips: %w", err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to join table"})
 		return
 	}
-
-	database.Model(&models.User{}).Where("id = ?", userID).Update("chips", user.Chips-buyIn.BuyIn)
 
 	addPlayerFunc(tableID, userID, user.Username, seatNumber, buyIn.BuyIn)
 

@@ -28,6 +28,14 @@ interface TableState {
   action_deadline?: string;
   winners?: any[];
   is_tournament?: boolean;
+  action_sequence?: number;
+}
+
+interface PendingAction {
+  type: string;
+  amount?: number;
+  requestId: string;
+  timestamp: number;
 }
 
 export const GameView: React.FC = () => {
@@ -45,6 +53,8 @@ export const GameView: React.FC = () => {
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [consoleLogs, setConsoleLogs] = useState<any[]>([]);
   const [tournamentId, setTournamentId] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [lastActionSequence, setLastActionSequence] = useState<number>(0);
   const [history, setHistory] = useState<any[]>(() => {
     // Load history from localStorage on mount
     try {
@@ -78,6 +88,12 @@ export const GameView: React.FC = () => {
       },
     ]);
   }, []);
+
+  // Generate unique request ID for idempotency
+  const generateRequestId = useCallback(() => {
+    return `${currentUserId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }, [currentUserId]);
+
   const isMyTurn = tableState?.current_turn === currentUserId;
 
   // Save history to localStorage whenever it changes
@@ -166,7 +182,32 @@ export const GameView: React.FC = () => {
         action_deadline: message.payload.action_deadline,
         winners: message.payload.winners,
         is_tournament: message.payload.is_tournament,
+        action_sequence: message.payload.action_sequence || 0,
       };
+
+      // Check if action sequence advanced (action was confirmed)
+      if (newState.action_sequence > lastActionSequence) {
+        setLastActionSequence(newState.action_sequence);
+
+        // Clear pending action if:
+        // 1. Turn changed away from us (our action was processed)
+        // 2. OR sequence advanced while we still have turn (happens in new round with same player)
+        if (pendingAction) {
+          const currentTurn = newState.current_turn;
+
+          // If turn changed away from us, our action was confirmed
+          if (currentTurn !== currentUserId) {
+            addConsoleLog('ACTION', `Action ${pendingAction.type} confirmed`, 'success');
+            setPendingAction(null);
+          }
+          // If we're still current turn but sequence advanced, also clear
+          // (happens in heads-up when same player acts first in new round)
+          else if (newState.action_sequence > lastActionSequence) {
+            addConsoleLog('ACTION', `Action ${pendingAction.type} confirmed (sequence advanced)`, 'success');
+            setPendingAction(null);
+          }
+        }
+      }
 
       // Track player actions and add to history
       if (tableState && tableState.players) {
@@ -335,15 +376,60 @@ export const GameView: React.FC = () => {
   }, [tableId, addMessageHandler, removeMessageHandler, showSuccess, showError, showWarning, addConsoleLog]);
 
   const handleAction = useCallback((action: string, amount?: number) => {
-    const amountStr = amount ? ` $${amount}` : '';
-    addConsoleLog('ACTION', `You ${action}${amountStr}`, 'success');
+    // Prevent multiple actions
+    if (pendingAction) {
+      addConsoleLog('ACTION', 'Action already pending, please wait...', 'warning');
+      return;
+    }
 
+    // Client-side validation
+    if (!isMyTurn) {
+      addConsoleLog('ACTION', 'Not your turn!', 'error');
+      return;
+    }
+
+    if (tableState?.status !== 'playing') {
+      addConsoleLog('ACTION', 'Game not in playing state', 'error');
+      return;
+    }
+
+    const requestId = generateRequestId();
+    const amountStr = amount ? ` $${amount}` : '';
+
+    // Set pending state IMMEDIATELY (disables buttons)
+    setPendingAction({
+      type: action,
+      amount,
+      requestId,
+      timestamp: Date.now(),
+    });
+
+    addConsoleLog('ACTION', `Sending ${action}${amountStr}...`, 'info');
+
+    // Send action to server with request_id
     sendMessage({
       type: 'game_action',
-      payload: { action, amount: amount || 0 },
+      payload: {
+        action,
+        amount: amount || 0,
+        request_id: requestId,
+        timestamp: Date.now(),
+      },
     });
+
+    // Timeout fallback: Clear pending state after 5 seconds if no confirmation
+    setTimeout(() => {
+      setPendingAction(prev => {
+        if (prev && prev.requestId === requestId) {
+          addConsoleLog('ACTION', 'Action timeout - clearing pending state', 'warning');
+          return null;
+        }
+        return prev;
+      });
+    }, 5000);
+
     // Note: History will be updated automatically when state changes are received
-  }, [sendMessage, addConsoleLog]);
+  }, [pendingAction, isMyTurn, tableState, generateRequestId, sendMessage, addConsoleLog]);
 
   const handleSendChatMessage = useCallback((message: string) => {
     // For now, just add to local state
@@ -596,6 +682,42 @@ export const GameView: React.FC = () => {
         />
       </Box>
 
+      {/* Pending action indicator */}
+      {pendingAction && tableState?.status === 'playing' && (
+        <Box
+          sx={{
+            px: 4,
+            py: 2,
+            background: 'linear-gradient(90deg, rgba(124, 58, 237, 0.2) 0%, rgba(6, 182, 212, 0.2) 100%)',
+            backdropFilter: 'blur(10px)',
+            borderBottom: `1px solid ${COLORS.primary.main}40`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 2,
+            zIndex: 11,
+          }}
+        >
+          <Box
+            sx={{
+              width: 20,
+              height: 20,
+              borderRadius: '50%',
+              border: `3px solid ${COLORS.primary.main}`,
+              borderTopColor: 'transparent',
+              animation: 'spin 1s linear infinite',
+              '@keyframes spin': {
+                '0%': { transform: 'rotate(0deg)' },
+                '100%': { transform: 'rotate(360deg)' },
+              },
+            }}
+          />
+          <Typography sx={{ color: COLORS.text.primary, fontSize: '14px', fontWeight: 600 }}>
+            Processing {pendingAction.type}...
+          </Typography>
+        </Box>
+      )}
+
       {/* Action bar - Only show when playing and it's my turn */}
       {tableState?.status === 'playing' && isMyTurn && (
         <Box
@@ -608,7 +730,7 @@ export const GameView: React.FC = () => {
             position: 'relative',
             zIndex: 10,
             boxShadow: '0 -8px 32px rgba(0, 0, 0, 0.5)',
-            
+
             // Animated glow effect on top border
             '&::before': {
               content: '""',
@@ -617,15 +739,15 @@ export const GameView: React.FC = () => {
               left: 0,
               right: 0,
               height: 2,
-              background: `linear-gradient(90deg, 
-                transparent 0%, 
-                ${COLORS.primary.main}80 20%, 
-                ${COLORS.primary.main} 50%, 
-                ${COLORS.primary.main}80 80%, 
+              background: `linear-gradient(90deg,
+                transparent 0%,
+                ${COLORS.primary.main}80 20%,
+                ${COLORS.primary.main} 50%,
+                ${COLORS.primary.main}80 80%,
                 transparent 100%)`,
               animation: 'borderGlow 3s ease-in-out infinite',
             },
-            
+
             '@keyframes borderGlow': {
               '0%, 100%': { opacity: 0.6 },
               '50%': { opacity: 1 },
@@ -639,6 +761,7 @@ export const GameView: React.FC = () => {
               <Button
                 variant="danger"
                 onClick={() => handleAction('fold')}
+                disabled={!!pendingAction}
                 sx={{
                   minWidth: 120,
                   height: 48,
@@ -665,6 +788,7 @@ export const GameView: React.FC = () => {
                 <Button
                   variant="secondary"
                   onClick={() => handleAction('check')}
+                  disabled={!!pendingAction}
                   sx={{
                     minWidth: 120,
                     height: 48,
@@ -687,6 +811,7 @@ export const GameView: React.FC = () => {
                 <Button
                   variant="success"
                   onClick={() => handleAction('call')}
+                  disabled={!!pendingAction}
                   sx={{
                     minWidth: 140,
                     height: 48,
@@ -727,6 +852,7 @@ export const GameView: React.FC = () => {
               <Button
                 variant="warning"
                 onClick={() => handleAction('allin')}
+                disabled={!!pendingAction}
                 sx={{
                   minWidth: 140,
                   height: 48,
@@ -889,7 +1015,7 @@ export const GameView: React.FC = () => {
                   <Button
                     variant="primary"
                     onClick={() => handleAction('raise', raiseAmount)}
-                    disabled={raiseAmount < minRaiseAmount || raiseAmount > maxRaiseAmount}
+                    disabled={!!pendingAction || raiseAmount < minRaiseAmount || raiseAmount > maxRaiseAmount}
                     sx={{
                       minWidth: 120,
                       height: 48,

@@ -13,7 +13,8 @@ type GameBridge struct {
 	Clients          map[string]interface{} // Stores client connections (must implement GetTableID() and GetSendChannel())
 	CurrentHandIDs   map[string]int64       // tableID -> current hand database ID
 	MatchmakingMu    sync.Mutex
-	MatchmakingQueue map[string][]string // gameMode -> []userIDs
+	MatchmakingQueue map[string][]string   // gameMode -> []userIDs
+	ActionTracker    *ActionTracker        // Tracks processed actions for idempotency
 }
 
 // NewGameBridge creates a new game bridge instance
@@ -23,6 +24,7 @@ func NewGameBridge() *GameBridge {
 		Clients:          make(map[string]interface{}),
 		CurrentHandIDs:   make(map[string]int64),
 		MatchmakingQueue: make(map[string][]string),
+		ActionTracker:    NewActionTracker(),
 	}
 }
 

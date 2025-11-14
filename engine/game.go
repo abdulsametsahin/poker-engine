@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"log"
 	"poker-engine/models"
 	"sync"
 	"time"
@@ -71,9 +72,9 @@ func (g *Game) StartNewHand() error {
 
 	g.table.Status = models.StatusPlaying
 	
-	// Fire handStart event
+	// CRITICAL DEADLOCK FIX: Fire event asynchronously
 	if g.onEvent != nil {
-		g.onEvent(models.Event{
+		event := models.Event{
 			Event:   "handStart",
 			TableID: g.table.TableID,
 			Data: map[string]interface{}{
@@ -82,7 +83,8 @@ func (g *Game) StartNewHand() error {
 				"smallBlindPosition": g.table.CurrentHand.SmallBlindPosition,
 				"bigBlindPosition":   g.table.CurrentHand.BigBlindPosition,
 			},
-		})
+		}
+		go g.onEvent(event)
 	}
 	
 	g.startActionTimer()
@@ -93,15 +95,17 @@ func (g *Game) removeBustedPlayers() {
 	for i, p := range g.table.Players {
 		if p != nil && p.Chips <= 0 {
 			g.table.Players[i] = nil
+			// CRITICAL DEADLOCK FIX: Fire event asynchronously
 			if g.onEvent != nil {
-				g.onEvent(models.Event{
+				event := models.Event{
 					Event:   "playerBusted",
 					TableID: g.table.TableID,
 					Data: map[string]interface{}{
 						"playerId":   p.PlayerID,
 						"playerName": p.PlayerName,
 					},
-				})
+				}
+				go g.onEvent(event)
 			}
 		}
 	}
@@ -196,6 +200,13 @@ func (g *Game) ProcessAction(playerID string, action models.PlayerAction, amount
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
+	// Log incoming action with full context for debugging
+	log.Printf("[ACTION_VALIDATE] player=%s action=%s amount=%d round=%s position=%d sequence=%d",
+		playerID, action, amount,
+		g.table.CurrentHand.BettingRound,
+		g.table.CurrentHand.CurrentPosition,
+		g.table.CurrentHand.ActionSequence)
+
 	if g.table == nil {
 		return fmt.Errorf("game table is nil")
 	}
@@ -217,15 +228,15 @@ func (g *Game) ProcessAction(playerID string, action models.PlayerAction, amount
 		return fmt.Errorf("player not found")
 	}
 
-	currentPlayer := g.table.Players[g.table.CurrentHand.CurrentPosition]
-	if currentPlayer == nil || currentPlayer.PlayerID != playerID {
-		return fmt.Errorf("not your turn")
+	// Use comprehensive turn validator
+	turnValidator := NewTurnValidator(g.table)
+	if err := turnValidator.ValidateTurn(playerID); err != nil {
+		log.Printf("[ACTION_REJECTED] player=%s reason=%v", playerID, err)
+		return err
 	}
 
-	// Check if player has already acted this turn
-	if player.HasActedThisRound {
-		return fmt.Errorf("you have already acted this turn")
-	}
+	log.Printf("[ACTION_ACCEPTED] player=%s action=%s seq=%d",
+		playerID, action, g.table.CurrentHand.ActionSequence)
 
 	g.stopActionTimer()
 
@@ -236,11 +247,17 @@ func (g *Game) ProcessAction(playerID string, action models.PlayerAction, amount
 		return err
 	}
 
+	// Update action tracking fields
 	player.HasActedThisRound = true
+	g.table.CurrentHand.ActionSequence++
+	g.table.CurrentHand.LastActionPlayerID = playerID
+	g.table.CurrentHand.LastActionTime = time.Now()
 
-	// Fire playerAction event to notify clients
+	// CRITICAL DEADLOCK FIX: Fire event asynchronously to prevent deadlock
+	// If event handler tries to call ProcessAction, it would deadlock waiting for mutex
+	// TODO: Full fix requires collecting events and firing after mutex release
 	if g.onEvent != nil {
-		g.onEvent(models.Event{
+		event := models.Event{
 			Event:   "playerAction",
 			TableID: g.table.TableID,
 			Data: map[string]interface{}{
@@ -248,7 +265,9 @@ func (g *Game) ProcessAction(playerID string, action models.PlayerAction, amount
 				"action":   string(action),
 				"amount":   amount,
 			},
-		})
+		}
+		// Fire event in goroutine to prevent deadlock
+		go g.onEvent(event)
 	}
 
 	if g.isBettingRoundComplete() {
@@ -277,8 +296,16 @@ func (g *Game) executeAction(processor *ActionProcessor, player *models.Player, 
 }
 
 func (g *Game) moveToNextPlayer() {
+	oldPosition := g.table.CurrentHand.CurrentPosition
 	positionFinder := NewPositionFinder(g.table.Players)
 	g.table.CurrentHand.CurrentPosition = positionFinder.findNextActive(g.table.CurrentHand.CurrentPosition)
+
+	if g.table.Players[g.table.CurrentHand.CurrentPosition] != nil {
+		log.Printf("[TURN_ADVANCE] Turn advanced from position %d to %d, player: %s",
+			oldPosition, g.table.CurrentHand.CurrentPosition,
+			g.table.Players[g.table.CurrentHand.CurrentPosition].PlayerID)
+	}
+
 	g.startActionTimer()
 }
 
@@ -286,6 +313,12 @@ func (g *Game) advanceToNextRound() {
 	if g.potCalculator == nil {
 		g.potCalculator = NewPotCalculator()
 	}
+
+	// Store last actor BEFORE resetting flags (important for heads-up edge case)
+	lastActor := g.table.CurrentHand.LastActionPlayerID
+	currentRound := g.table.CurrentHand.BettingRound
+
+	log.Printf("[ROUND_ADVANCE] Advancing from %s, last actor: %s", currentRound, lastActor)
 
 	// Only recalculate pot if there were bets in this round
 	hasBets := false
@@ -300,6 +333,7 @@ func (g *Game) advanceToNextRound() {
 		g.table.CurrentHand.Pot = g.potCalculator.CalculatePots(g.table.Players)
 	}
 
+	// Reset HasActedThisRound flags for all players
 	resetPlayersForNewRound(g.table.Players)
 
 	g.table.CurrentHand.CurrentBet = 0
@@ -324,23 +358,41 @@ func (g *Game) advanceToNextRound() {
 		return
 	}
 
-	// Fire roundAdvanced event
+	// CRITICAL DEADLOCK FIX: Fire event asynchronously to prevent deadlock
 	if g.onEvent != nil {
-		g.onEvent(models.Event{
+		event := models.Event{
 			Event:   "roundAdvanced",
 			TableID: g.table.TableID,
 			Data: map[string]interface{}{
-				"bettingRound":    string(g.table.CurrentHand.BettingRound),
-				"communityCards":  g.table.CurrentHand.CommunityCards,
+				"bettingRound":   string(g.table.CurrentHand.BettingRound),
+				"communityCards": g.table.CurrentHand.CommunityCards,
 			},
-		})
+		}
+		go g.onEvent(event)
 	}
 
 	// Only set position and start timer if there are players who can still act
 	playersWhoCanAct := countPlayers(g.table.Players, canAct)
 	if playersWhoCanAct > 1 {
 		positionFinder := NewPositionFinder(g.table.Players)
-		g.table.CurrentHand.CurrentPosition = positionFinder.findNextActive(g.table.CurrentHand.DealerPosition)
+		newPosition := positionFinder.findNextActive(g.table.CurrentHand.DealerPosition)
+
+		// Log if same player is acting first in new round (common in heads-up)
+		if g.table.Players[newPosition] != nil && g.table.Players[newPosition].PlayerID == lastActor {
+			log.Printf("[ROUND_ADVANCE] WARNING: Same player (%s) acting first in new round %s (normal for heads-up)",
+				lastActor, g.table.CurrentHand.BettingRound)
+			// Keep LastActionPlayerID set so 100ms anti-spam kicks in
+			g.table.CurrentHand.LastActionPlayerID = lastActor
+		} else {
+			// Different player, clear last action tracking
+			g.table.CurrentHand.LastActionPlayerID = ""
+		}
+
+		g.table.CurrentHand.CurrentPosition = newPosition
+		log.Printf("[ROUND_ADVANCE] New round %s, current position: %d, player: %s",
+			g.table.CurrentHand.BettingRound, newPosition,
+			g.table.Players[newPosition].PlayerID)
+
 		g.startActionTimer()
 	}
 }
@@ -405,12 +457,14 @@ func (g *Game) completeHand() {
 	g.table.Status = models.StatusHandComplete
 	g.stopActionTimer()
 
+	// CRITICAL DEADLOCK FIX: Fire event asynchronously
 	if g.onEvent != nil {
-		g.onEvent(models.Event{
+		event := models.Event{
 			Event:   "handComplete",
 			TableID: g.table.TableID,
 			Data:    models.HandCompleteEvent{Winners: g.table.Winners},
-		})
+		}
+		go g.onEvent(event)
 	}
 
 	// Check if game is complete (only one player with chips left)
@@ -423,8 +477,9 @@ func (g *Game) completeHand() {
 		}
 	}
 
+	// CRITICAL DEADLOCK FIX: Fire event asynchronously
 	if playersWithChips == 1 && lastPlayerStanding != nil && g.onEvent != nil {
-		g.onEvent(models.Event{
+		event := models.Event{
 			Event:   "gameComplete",
 			TableID: g.table.TableID,
 			Data: map[string]interface{}{
@@ -433,7 +488,8 @@ func (g *Game) completeHand() {
 				"finalChips":   lastPlayerStanding.Chips,
 				"totalPlayers": len(g.table.Players),
 			},
-		})
+		}
+		go g.onEvent(event)
 	}
 }
 
@@ -487,15 +543,17 @@ func (g *Game) startActionTimer() {
 	deadline := time.Now().Add(time.Duration(g.table.Config.ActionTimeout) * time.Second)
 	g.table.CurrentHand.ActionDeadline = &deadline
 
+	// CRITICAL DEADLOCK FIX: Fire event asynchronously
 	if g.onEvent != nil {
-		g.onEvent(models.Event{
+		event := models.Event{
 			Event:   "actionRequired",
 			TableID: g.table.TableID,
 			Data: models.ActionRequiredEvent{
 				PlayerID: currentPlayer.PlayerID,
 				Deadline: deadline.Format(time.RFC3339),
 			},
-		})
+		}
+		go g.onEvent(event)
 	}
 
 	g.actionTimer = time.AfterFunc(time.Duration(g.table.Config.ActionTimeout)*time.Second, func() {
@@ -552,15 +610,17 @@ func (g *Game) HandleTimeout(playerID string) error {
 		currentPlayer.LastActionAmount = 0
 		currentPlayer.HasActedThisRound = true
 
+		// CRITICAL DEADLOCK FIX: Fire event asynchronously
 		if g.onEvent != nil {
-			g.onEvent(models.Event{
+			event := models.Event{
 				Event:   "playerSitOut",
 				TableID: g.table.TableID,
 				Data: map[string]interface{}{
 					"playerId": playerID,
 					"reason":   "consecutive_timeouts",
 				},
-			})
+			}
+			go g.onEvent(event)
 		}
 	} else {
 		// Determine the appropriate auto-action
@@ -571,8 +631,9 @@ func (g *Game) HandleTimeout(playerID string) error {
 			currentPlayer.LastActionAmount = 0
 			currentPlayer.HasActedThisRound = true
 
+			// CRITICAL DEADLOCK FIX: Fire event asynchronously
 			if g.onEvent != nil {
-				g.onEvent(models.Event{
+				event := models.Event{
 					Event:   "playerAction",
 					TableID: g.table.TableID,
 					Data: map[string]interface{}{
@@ -581,7 +642,8 @@ func (g *Game) HandleTimeout(playerID string) error {
 						"reason":              "timeout",
 						"consecutiveTimeouts": currentPlayer.ConsecutiveTimeouts,
 					},
-				})
+				}
+				go g.onEvent(event)
 			}
 		} else {
 			// No bet to call -> auto-check
@@ -590,8 +652,9 @@ func (g *Game) HandleTimeout(playerID string) error {
 			currentPlayer.HasActedThisRound = true
 			// Status remains Active
 
+			// CRITICAL DEADLOCK FIX: Fire event asynchronously
 			if g.onEvent != nil {
-				g.onEvent(models.Event{
+				event := models.Event{
 					Event:   "playerAction",
 					TableID: g.table.TableID,
 					Data: map[string]interface{}{
@@ -600,7 +663,8 @@ func (g *Game) HandleTimeout(playerID string) error {
 						"reason":              "timeout",
 						"consecutiveTimeouts": currentPlayer.ConsecutiveTimeouts,
 					},
-				})
+				}
+				go g.onEvent(event)
 			}
 		}
 	}

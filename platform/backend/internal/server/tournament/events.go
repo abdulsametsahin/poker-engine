@@ -229,6 +229,83 @@ func HandleTournamentEngineEvent(
 		log.Printf("[ENGINE_EVENT] Card dealt on tournament table %s (skipping broadcast)", tableID)
 		return
 
+	case "playerBusted":
+		// CRITICAL: Handle player elimination when they run out of chips
+		// This event is fired when the engine removes a player with 0 chips at the start of a new hand
+		log.Printf("[ENGINE_EVENT] Player busted on tournament table %s", tableID)
+
+		data, ok := event.Data.(map[string]interface{})
+		if !ok {
+			log.Printf("[PLAYER_BUSTED] Invalid event data for table %s", tableID)
+			return
+		}
+
+		playerID, _ := data["playerId"].(string)
+		playerName, _ := data["playerName"].(string)
+
+		if playerID == "" {
+			log.Printf("[PLAYER_BUSTED] Missing player ID in event data")
+			return
+		}
+
+		log.Printf("[PLAYER_BUSTED] Player %s (%s) busted on table %s", playerName, playerID, tableID)
+
+		// Get tournament ID for this table
+		var dbTable models.Table
+		if err := database.Where("id = ?", tableID).First(&dbTable).Error; err != nil {
+			log.Printf("[PLAYER_BUSTED] Error getting table: %v", err)
+			return
+		}
+
+		if dbTable.TournamentID == nil {
+			log.Printf("[PLAYER_BUSTED] Table %s is not a tournament table", tableID)
+			return
+		}
+
+		tournamentID := *dbTable.TournamentID
+
+		// Check if player is already eliminated
+		var tournamentPlayer models.TournamentPlayer
+		err := database.Where("tournament_id = ? AND user_id = ?", tournamentID, playerID).First(&tournamentPlayer).Error
+		if err != nil {
+			log.Printf("[PLAYER_BUSTED] Error checking elimination status for player %s: %v", playerID, err)
+			return
+		}
+
+		// Skip if already eliminated
+		if tournamentPlayer.EliminatedAt != nil {
+			log.Printf("[PLAYER_BUSTED] Player %s already eliminated, skipping", playerID)
+			return
+		}
+
+		// Eliminate the player
+		if err := eliminationTracker.EliminatePlayer(tournamentID, playerID); err != nil {
+			log.Printf("[PLAYER_BUSTED] Error eliminating player %s: %v", playerID, err)
+		} else {
+			log.Printf("[PLAYER_BUSTED] Successfully eliminated player %s from tournament %s", playerID, tournamentID)
+		}
+
+		// Check if we should consolidate or balance tables
+		go func() {
+			shouldConsolidate, _ := eliminationTracker.ShouldConsolidateTables(tournamentID)
+			if shouldConsolidate {
+				if err := consolidator.ConsolidateTables(tournamentID); err != nil {
+					log.Printf("[PLAYER_BUSTED] Error consolidating tables: %v", err)
+				}
+			} else {
+				shouldBalance, _ := eliminationTracker.ShouldBalanceTables(tournamentID)
+				if shouldBalance {
+					if err := consolidator.BalanceTables(tournamentID); err != nil {
+						log.Printf("[PLAYER_BUSTED] Error balancing tables: %v", err)
+					}
+				}
+			}
+		}()
+
+		// Broadcast updated table state
+		broadcastFunc(tableID)
+		return
+
 	default:
 		log.Printf("[ENGINE_EVENT] Unexpected event on tournament table %s: %s - broadcasting", tableID, event.Event)
 		broadcastFunc(tableID)
@@ -408,9 +485,8 @@ func UpdateTournamentTableBlinds(
 		return
 	}
 
-	bridge.Mu.Lock()
-	defer bridge.Mu.Unlock()
-
+	bridge.Mu.RLock()
+	updatedCount := 0
 	for _, dbTable := range tables {
 		// Update the engine table if it exists
 		engineTable, exists := bridge.Tables[dbTable.ID]
@@ -418,15 +494,20 @@ func UpdateTournamentTableBlinds(
 			continue
 		}
 
-		// Update the config in the engine table
-		state := engineTable.GetState()
-		state.Config.SmallBlind = newLevel.SmallBlind
-		state.Config.BigBlind = newLevel.BigBlind
+		// CRITICAL: Use UpdateBlinds method for thread-safe blind updates
+		// This properly coordinates with the game mutex to prevent race conditions
+		// Safe to call during active hands - only affects future hands
+		if err := engineTable.UpdateBlinds(newLevel.SmallBlind, newLevel.BigBlind); err != nil {
+			log.Printf("Error updating blinds for table %s: %v", dbTable.ID, err)
+			continue
+		}
 
-		log.Printf("Updated table %s blinds to %d/%d", dbTable.ID, newLevel.SmallBlind, newLevel.BigBlind)
+		log.Printf("Updated table %s blinds to %d/%d (will apply to next hand)", dbTable.ID, newLevel.SmallBlind, newLevel.BigBlind)
+		updatedCount++
 	}
+	bridge.Mu.RUnlock()
 
-	log.Printf("Tournament %s: Updated %d tables with new blinds", tournamentID, len(tables))
+	log.Printf("Tournament %s: Updated %d tables with new blinds", tournamentID, updatedCount)
 }
 
 // BroadcastBlindIncrease broadcasts a blind increase to all clients

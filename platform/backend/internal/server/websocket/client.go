@@ -1,6 +1,8 @@
 package websocket
 
 import (
+	"sync"
+
 	"github.com/gorilla/websocket"
 )
 
@@ -13,9 +15,13 @@ type Client struct {
 }
 
 // ReadPump handles incoming messages from the client
-func (c *Client) ReadPump(clients map[string]interface{}, handleMessage func(*Client, WSMessage)) {
+// CRITICAL: Mutex protection added to prevent concurrent map access panics
+func (c *Client) ReadPump(clients map[string]interface{}, mu *sync.RWMutex, handleMessage func(*Client, WSMessage)) {
 	defer func() {
+		// CRITICAL: Protect map deletion with mutex to prevent server crashes
+		mu.Lock()
 		delete(clients, c.UserID)
+		mu.Unlock()
 		c.Conn.Close()
 	}()
 

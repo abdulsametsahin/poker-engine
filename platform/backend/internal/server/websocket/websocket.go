@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,9 +24,59 @@ type WSMessage struct {
 	Payload interface{} `json:"payload"`
 }
 
-// Upgrader configures the WebSocket upgrader
+// AllowedOrigins holds the whitelist of origins that can connect via WebSocket
+var AllowedOrigins = getAllowedOrigins()
+
+// getAllowedOrigins loads allowed origins from environment variable
+// Format: Comma-separated list, e.g., "http://localhost:3000,https://poker.example.com"
+func getAllowedOrigins() []string {
+	originsEnv := os.Getenv("ALLOWED_ORIGINS")
+	if originsEnv == "" {
+		// Default to localhost for development
+		log.Println("[SECURITY] WARNING: ALLOWED_ORIGINS not set, defaulting to localhost:3000")
+		return []string{
+			"http://localhost:3000",
+			"http://127.0.0.1:3000",
+		}
+	}
+
+	origins := strings.Split(originsEnv, ",")
+	trimmed := make([]string, 0, len(origins))
+	for _, origin := range origins {
+		trimmed = append(trimmed, strings.TrimSpace(origin))
+	}
+
+	log.Printf("[SECURITY] Allowed WebSocket origins: %v", trimmed)
+	return trimmed
+}
+
+// checkOrigin validates that the WebSocket connection is from an allowed origin
+// CRITICAL: This prevents CSRF attacks by rejecting connections from malicious websites
+func checkOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+
+	// CRITICAL: Reject connections without Origin header
+	// (legitimate browsers always send Origin for WebSocket connections)
+	if origin == "" {
+		log.Printf("[SECURITY] Rejected WebSocket connection: missing Origin header from %s", r.RemoteAddr)
+		return false
+	}
+
+	// Check if origin is in whitelist
+	for _, allowed := range AllowedOrigins {
+		if origin == allowed {
+			return true
+		}
+	}
+
+	// Log rejected connection attempts for security monitoring
+	log.Printf("[SECURITY] Rejected WebSocket connection from unauthorized origin: %s (remote: %s)", origin, r.RemoteAddr)
+	return false
+}
+
+// Upgrader configures the WebSocket upgrader with origin checking
 var Upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
+	CheckOrigin: checkOrigin,
 }
 
 // HandleWebSocket upgrades HTTP connection to WebSocket
@@ -59,7 +111,7 @@ func HandleWebSocket(
 	mu.Unlock()
 
 	go client.WritePump()
-	go client.ReadPump(clients, handleMessage)
+	go client.ReadPump(clients, mu, handleMessage)
 }
 
 // SendToClient sends a message to a specific client
@@ -253,6 +305,7 @@ func BroadcastTableState(
 			var currentTurn *string
 			bettingRound := ""
 			currentBet := 0
+			var actionSequence uint64
 
 			// Only access CurrentHand if it exists
 			if state.CurrentHand != nil {
@@ -266,6 +319,7 @@ func BroadcastTableState(
 
 				bettingRound = string(state.CurrentHand.BettingRound)
 				currentBet = state.CurrentHand.CurrentBet
+				actionSequence = state.CurrentHand.ActionSequence
 
 				if state.CurrentHand.CurrentPosition >= 0 && state.CurrentHand.CurrentPosition < len(state.Players) {
 					if currentPlayer := state.Players[state.CurrentHand.CurrentPosition]; currentPlayer != nil {
@@ -283,6 +337,7 @@ func BroadcastTableState(
 				"status":          string(state.Status),
 				"betting_round":   bettingRound,
 				"current_bet":     currentBet,
+				"action_sequence": actionSequence,
 			}
 
 			// Add action deadline if there's an active player

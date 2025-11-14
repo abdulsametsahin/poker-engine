@@ -6,6 +6,7 @@ import (
 	"poker-platform/backend/internal/auth"
 	"poker-platform/backend/internal/db"
 	"poker-platform/backend/internal/models"
+	"poker-platform/backend/internal/validation"
 
 	"github.com/gin-gonic/gin"
 )
@@ -15,6 +16,22 @@ func HandleRegister(c *gin.Context, database *db.DB, authService *auth.Service) 
 	var req models.RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	// CRITICAL: Validate all user inputs to prevent injection attacks and ensure data integrity
+	if err := validation.ValidateUsername(req.Username); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := validation.ValidateEmail(req.Email); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := validation.ValidatePassword(req.Password); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -49,6 +66,19 @@ func HandleLogin(c *gin.Context, database *db.DB, authService *auth.Service) {
 	var req models.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	// CRITICAL: Validate username to prevent injection attacks (defense in depth)
+	// Note: Database uses parameterized queries, but this adds extra protection
+	if err := validation.ValidateUsername(req.Username); err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+		return
+	}
+
+	// Basic validation on password (don't reveal whether username or password is wrong)
+	if req.Password == "" || len(req.Password) > 128 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
 		return
 	}
 
