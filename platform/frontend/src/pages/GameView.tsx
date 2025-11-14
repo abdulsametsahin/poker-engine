@@ -177,6 +177,12 @@ export const GameView: React.FC = () => {
   // Handle WebSocket messages
   useEffect(() => {
     const handleTableState = (message: WSMessage) => {
+      // Filter by table_id - only process messages for our table
+      if (message.payload.table_id && message.payload.table_id !== tableId) {
+        console.log(`[GameView] Ignoring table_state for table ${message.payload.table_id}, current table: ${tableId}`);
+        return;
+      }
+
       // Log the message receipt
       addConsoleLog('WEBSOCKET', `Received ${message.type} message`, 'debug');
 
@@ -345,6 +351,12 @@ export const GameView: React.FC = () => {
     };
 
     const handleTournamentPaused = (message: WSMessage<TournamentPausedPayload>) => {
+      // Filter by tournament_id if we're in a tournament
+      if (tournamentId && message.payload.tournament_id !== tournamentId) {
+        console.log(`[GameView] Ignoring tournament_paused for ${message.payload.tournament_id}, current: ${tournamentId}`);
+        return;
+      }
+
       addConsoleLog('TOURNAMENT', 'Tournament paused - Game on hold', 'warning');
       showWarning('Tournament has been paused. Game is on hold.');
       // Update table state to paused
@@ -352,6 +364,12 @@ export const GameView: React.FC = () => {
     };
 
     const handleTournamentResumed = (message: WSMessage<TournamentResumedPayload>) => {
+      // Filter by tournament_id if we're in a tournament
+      if (tournamentId && message.payload.tournament_id !== tournamentId) {
+        console.log(`[GameView] Ignoring tournament_resumed for ${message.payload.tournament_id}, current: ${tournamentId}`);
+        return;
+      }
+
       addConsoleLog('TOURNAMENT', 'Tournament resumed - Game continuing', 'success');
       showSuccess('Tournament has been resumed. Game continues!');
       // Update table state back to playing
@@ -359,6 +377,12 @@ export const GameView: React.FC = () => {
     };
 
     const handleTournamentComplete = (message: WSMessage<TournamentCompletePayload>) => {
+      // Filter by tournament_id if we're in a tournament
+      if (tournamentId && message.payload.tournament_id !== tournamentId) {
+        console.log(`[GameView] Ignoring tournament_complete for ${message.payload.tournament_id}, current: ${tournamentId}`);
+        return;
+      }
+
       addConsoleLog('TOURNAMENT', `Tournament complete! Winner: ${message.payload.winner_name}`, 'success');
       showSuccess(`Tournament complete! Winner: ${message.payload.winner_name}`);
       // Store tournament ID for navigation
