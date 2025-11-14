@@ -50,7 +50,7 @@ interface Tournament {
 export const Tournaments: React.FC = () => {
   const { user } = useAuth();
   const { showSuccess, showError } = useToast();
-  const { addMessageHandler, removeMessageHandler } = useWebSocket();
+  const { addMessageHandler } = useWebSocket();
   const navigate = useNavigate();
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [registeredTournaments, setRegisteredTournaments] = useState<Set<string>>(new Set());
@@ -152,7 +152,7 @@ export const Tournaments: React.FC = () => {
       status: string;
       created_at: string;
     } }) => {
-      const newTournament = {
+      const newTournament: Tournament = {
         id: message.payload.tournament_id,
         tournament_code: '', // Will be filled when fetched
         name: message.payload.name,
@@ -165,6 +165,8 @@ export const Tournaments: React.FC = () => {
         prize_pool: message.payload.buy_in,
         created_at: message.payload.created_at,
         structure: '{}',
+        prize_structure: 'winner_takes_all',
+        auto_start_delay: 300,
       };
 
       setTournaments(prev => [newTournament, ...prev]);
