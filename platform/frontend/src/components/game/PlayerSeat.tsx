@@ -12,6 +12,7 @@ interface PlayerSeatProps {
   isActive: boolean;
   isCurrentUser?: boolean;
   actionDeadline?: string;
+  isPaused?: boolean;
 }
 
 export const PlayerSeat: React.FC<PlayerSeatProps> = memo(({
@@ -20,6 +21,7 @@ export const PlayerSeat: React.FC<PlayerSeatProps> = memo(({
   isActive,
   isCurrentUser = false,
   actionDeadline,
+  isPaused = false,
 }) => {
   if (!player) {
     return (
@@ -80,7 +82,7 @@ export const PlayerSeat: React.FC<PlayerSeatProps> = memo(({
             zIndex: 30,
           }}
         >
-          <ActionTimer deadline={actionDeadline} totalTime={30} />
+          <ActionTimer deadline={actionDeadline} totalTime={30} isPaused={isPaused} />
         </Box>
       )}
 

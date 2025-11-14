@@ -328,6 +328,7 @@ export const PokerTable: React.FC<PokerTableProps> = memo(({
               isActive={current_turn === player?.user_id}
               isCurrentUser={currentUserId === player?.user_id}
               actionDeadline={current_turn === player?.user_id ? action_deadline : undefined}
+              isPaused={status === 'paused'}
             />
           </Box>
         );
