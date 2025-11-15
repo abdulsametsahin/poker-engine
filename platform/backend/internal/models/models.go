@@ -120,18 +120,21 @@ func (TournamentPlayer) TableName() string {
 
 // Hand represents a single poker hand
 type Hand struct {
-	ID                 int64          `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	TableID            string         `gorm:"column:table_id;type:varchar(36);not null;index:idx_table_hand" json:"table_id"`
-	HandNumber         int            `gorm:"column:hand_number;not null;index:idx_table_hand" json:"hand_number"`
-	DealerPosition     int            `gorm:"column:dealer_position;not null" json:"dealer_position"`
-	SmallBlindPosition int            `gorm:"column:small_blind_position;not null" json:"small_blind_position"`
-	BigBlindPosition   int            `gorm:"column:big_blind_position;not null" json:"big_blind_position"`
-	CommunityCards     string         `gorm:"column:community_cards;type:json" json:"community_cards"`
-	PotAmount          int            `gorm:"column:pot_amount;not null" json:"pot_amount"`
-	Winners            string         `gorm:"column:winners;type:json" json:"winners"`
-	StartedAt          time.Time      `gorm:"column:started_at;autoCreateTime" json:"started_at"`
-	CompletedAt        *time.Time     `gorm:"column:completed_at" json:"completed_at,omitempty"`
-	DeletedAt          gorm.DeletedAt `gorm:"column:deleted_at;index" json:"-"`
+	ID                   int64          `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	TableID              string         `gorm:"column:table_id;type:varchar(36);not null;index:idx_table_hand" json:"table_id"`
+	HandNumber           int            `gorm:"column:hand_number;not null;index:idx_table_hand" json:"hand_number"`
+	DealerPosition       int            `gorm:"column:dealer_position;not null" json:"dealer_position"`
+	SmallBlindPosition   int            `gorm:"column:small_blind_position;not null" json:"small_blind_position"`
+	BigBlindPosition     int            `gorm:"column:big_blind_position;not null" json:"big_blind_position"`
+	CommunityCards       string         `gorm:"column:community_cards;type:json" json:"community_cards"`
+	PotAmount            int            `gorm:"column:pot_amount;not null" json:"pot_amount"`
+	Winners              string         `gorm:"column:winners;type:json" json:"winners"`
+	BettingRoundsReached *string        `gorm:"column:betting_rounds_reached;type:enum('preflop', 'flop', 'turn', 'river', 'showdown');default:preflop" json:"betting_rounds_reached,omitempty"`
+	NumPlayers           int            `gorm:"column:num_players;default:0" json:"num_players"`
+	HandSummary          *string        `gorm:"column:hand_summary;type:text" json:"hand_summary,omitempty"`
+	StartedAt            time.Time      `gorm:"column:started_at;autoCreateTime" json:"started_at"`
+	CompletedAt          *time.Time     `gorm:"column:completed_at" json:"completed_at,omitempty"`
+	DeletedAt            gorm.DeletedAt `gorm:"column:deleted_at;index" json:"-"`
 }
 
 // TableName specifies the table name for Hand model
@@ -154,6 +157,26 @@ type HandAction struct {
 // TableName specifies the table name for HandAction model
 func (HandAction) TableName() string {
 	return "hand_actions"
+}
+
+// GameEvent represents a comprehensive event in a poker hand
+type GameEvent struct {
+	ID             int64          `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	HandID         int64          `gorm:"column:hand_id;not null;index:idx_hand" json:"hand_id"`
+	TableID        string         `gorm:"column:table_id;type:varchar(36);not null;index:idx_table_created" json:"table_id"`
+	EventType      string         `gorm:"column:event_type;type:enum('hand_started', 'cards_dealt', 'blinds_posted', 'player_action', 'round_advanced', 'showdown', 'hand_complete', 'player_timeout', 'player_eliminated', 'blinds_increased');not null;index:idx_event_type" json:"event_type"`
+	UserID         *string        `gorm:"column:user_id;type:varchar(36);index:idx_user_id" json:"user_id,omitempty"`
+	BettingRound   *string        `gorm:"column:betting_round;type:enum('preflop', 'flop', 'turn', 'river')" json:"betting_round,omitempty"`
+	ActionType     *string        `gorm:"column:action_type;type:varchar(20)" json:"action_type,omitempty"`
+	Amount         int            `gorm:"column:amount;default:0" json:"amount"`
+	Metadata       string         `gorm:"column:metadata;type:json" json:"metadata,omitempty"`
+	SequenceNumber int            `gorm:"column:sequence_number;not null;index:idx_sequence" json:"sequence_number"`
+	CreatedAt      time.Time      `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+}
+
+// TableName specifies the table name for GameEvent model
+func (GameEvent) TableName() string {
+	return "game_events"
 }
 
 // Session represents a user session token

@@ -406,6 +406,47 @@ export const GameView: React.FC = () => {
       addConsoleLog('CHAT', `${message.payload.username}: ${message.payload.message}`, 'info');
     };
 
+    const handleActionConfirmed = (message: WSMessage) => {
+      // Immediate confirmation from server that action was processed
+      const { user_id, action, success } = message.payload;
+
+      if (user_id === currentUserId && pendingAction?.type === action) {
+        addConsoleLog('ACTION', `Action ${action} confirmed by server`, 'success');
+        setPendingAction(null); // Clear immediately
+      }
+    };
+
+    const handlePlayerActionBroadcast = (message: WSMessage) => {
+      // Broadcast of player action to all players for history updates
+      const { player_name, action, amount, timestamp } = message.payload;
+
+      // Add to history
+      setHistory(prev => {
+        const now = Date.now();
+        const recentDuplicate = prev.some(entry =>
+          entry.playerName === player_name &&
+          entry.action === action &&
+          entry.amount === amount &&
+          now - new Date(entry.timestamp).getTime() < 500
+        );
+
+        if (recentDuplicate) {
+          return prev; // Skip duplicate
+        }
+
+        const amountStr = amount ? ` $${amount}` : '';
+        addConsoleLog('ACTION', `${player_name} ${action}${amountStr}`, 'info');
+
+        return [...prev, {
+          id: `${player_name}-${Date.now()}`,
+          playerName: player_name,
+          action,
+          amount,
+          timestamp: new Date(timestamp * 1000), // Convert Unix timestamp to Date
+        }];
+      });
+    };
+
     // Register handlers and store cleanup functions
     const cleanup1 = addMessageHandler('table_state', handleTableState);
     const cleanup2 = addMessageHandler('game_update', handleGameUpdate);
@@ -415,6 +456,8 @@ export const GameView: React.FC = () => {
     const cleanup6 = addMessageHandler('tournament_resumed', handleTournamentResumed);
     const cleanup7 = addMessageHandler('tournament_complete', handleTournamentComplete);
     const cleanup8 = addMessageHandler('chat_message', handleChatMessage);
+    const cleanup9 = addMessageHandler('action_confirmed', handleActionConfirmed);
+    const cleanup10 = addMessageHandler('player_action_broadcast', handlePlayerActionBroadcast);
 
     return () => {
       cleanup1();
@@ -425,6 +468,8 @@ export const GameView: React.FC = () => {
       cleanup6();
       cleanup7();
       cleanup8();
+      cleanup9();
+      cleanup10();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tableId, addMessageHandler, removeMessageHandler, showSuccess, showError, showWarning, addConsoleLog]);

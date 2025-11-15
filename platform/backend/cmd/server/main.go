@@ -12,6 +12,7 @@ import (
 	"poker-platform/backend/internal/server/events"
 	"poker-platform/backend/internal/server/game"
 	"poker-platform/backend/internal/server/handlers"
+	"poker-platform/backend/internal/server/history"
 	"poker-platform/backend/internal/server/matchmaking"
 	serverTournament "poker-platform/backend/internal/server/tournament"
 	"poker-platform/backend/internal/server/websocket"
@@ -144,6 +145,20 @@ func setupRoutes(r *gin.Engine) {
 		})
 		authorized.POST("/api/tables/:id/join", func(c *gin.Context) {
 			handlers.HandleJoinTable(c, appConfig.Database, addPlayerToEngineWrapper)
+		})
+
+		// History routes
+		authorized.GET("/api/hands/:handId/history", func(c *gin.Context) {
+			history.GetHandHistory(c, appConfig.Database)
+		})
+		authorized.GET("/api/tables/:tableId/hands", func(c *gin.Context) {
+			history.GetTableHands(c, appConfig.Database)
+		})
+		authorized.GET("/api/tables/:tableId/current-hand/history", func(c *gin.Context) {
+			getCurrentHandID := func(tableID string) (int64, bool) {
+				return bridge.GetCurrentHandID(tableID)
+			}
+			history.GetCurrentHandHistory(c, appConfig.Database, getCurrentHandID)
 		})
 
 		// Matchmaking routes
@@ -455,7 +470,7 @@ func handleWSMessageWrapper(c *websocket.Client, msg websocket.WSMessage) {
 			}
 		}
 
-		events.ProcessGameAction(c.UserID, c.TableID, action, requestID, amount, appConfig.Database, bridge)
+		events.ProcessGameAction(c.UserID, c.TableID, action, requestID, amount, appConfig.Database, bridge, appConfig.HistoryTracker)
 
 	case "ping":
 		websocket.SendToClient(c, websocket.WSMessage{Type: "pong"})
@@ -506,6 +521,7 @@ func handleEvent(tableID string, event pokerModels.Event, gameType pokerModels.G
 			broadcastTableStateWrapper,
 			syncPlayerChipsWrapper,
 			syncFinalChipsWrapper,
+			appConfig.HistoryTracker,
 		)
 	}
 }
