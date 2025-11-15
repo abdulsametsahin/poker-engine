@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os"
-	"strconv"
 	"time"
 
 	"poker-platform/backend/internal/db"
@@ -15,22 +13,6 @@ import (
 	pokerModels "poker-engine/models"
 	"gorm.io/gorm"
 )
-
-// getMatchmakingCountdown returns the countdown duration from env or default (10 seconds)
-func getMatchmakingCountdown() time.Duration {
-	secondsStr := os.Getenv("MATCHMAKING_COUNTDOWN_SECONDS")
-	if secondsStr == "" {
-		return 10 * time.Second
-	}
-
-	seconds, err := strconv.Atoi(secondsStr)
-	if err != nil || seconds <= 0 {
-		log.Printf("Invalid MATCHMAKING_COUNTDOWN_SECONDS value: %s, using default 10", secondsStr)
-		return 10 * time.Second
-	}
-
-	return time.Duration(seconds) * time.Second
-}
 
 // TablePreset defines a predefined table configuration
 type TablePreset struct {
@@ -147,15 +129,14 @@ func CheckAndStartGame(bridge *GameBridge, database *db.DB, tableID string, broa
 	}
 
 	if activeCount >= 2 && state.Status == pokerModels.StatusWaiting {
-		// Check if this is a matchmaking table (created recently)
-		// If table was created less than countdown duration ago, don't start yet
-		// This allows the matchmaking countdown to complete
-		countdownDuration := getMatchmakingCountdown()
+		// Check if this table has a countdown timer (matchmaking tables)
+		// If ready_to_start_at is set and we haven't reached it yet, don't start
 		var tableRecord models.Table
 		if err := database.Where("id = ?", tableID).First(&tableRecord).Error; err == nil {
-			if time.Since(tableRecord.CreatedAt) < countdownDuration {
-				log.Printf("Table %s created recently (%.1fs ago), waiting for matchmaking countdown",
-					tableID, time.Since(tableRecord.CreatedAt).Seconds())
+			if tableRecord.ReadyToStartAt != nil && time.Now().Before(*tableRecord.ReadyToStartAt) {
+				timeRemaining := time.Until(*tableRecord.ReadyToStartAt).Seconds()
+				log.Printf("Table %s waiting for countdown (%.1fs remaining)",
+					tableID, timeRemaining)
 				return
 			}
 		}

@@ -35,10 +35,11 @@ type Table struct {
 	MaxPlayers   int            `gorm:"column:max_players;not null" json:"max_players"`
 	MinBuyIn     *int           `gorm:"column:min_buy_in" json:"min_buy_in,omitempty"`
 	MaxBuyIn     *int           `gorm:"column:max_buy_in" json:"max_buy_in,omitempty"`
-	CreatedAt    time.Time      `gorm:"column:created_at;autoCreateTime" json:"created_at"`
-	StartedAt    *time.Time     `gorm:"column:started_at" json:"started_at,omitempty"`
-	CompletedAt  *time.Time     `gorm:"column:completed_at" json:"completed_at,omitempty"`
-	DeletedAt    gorm.DeletedAt `gorm:"column:deleted_at;index" json:"-"`
+	CreatedAt      time.Time      `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	ReadyToStartAt *time.Time     `gorm:"column:ready_to_start_at" json:"ready_to_start_at,omitempty"`
+	StartedAt      *time.Time     `gorm:"column:started_at" json:"started_at,omitempty"`
+	CompletedAt    *time.Time     `gorm:"column:completed_at" json:"completed_at,omitempty"`
+	DeletedAt      gorm.DeletedAt `gorm:"column:deleted_at;index" json:"-"`
 }
 
 // TableName specifies the table name for Table model
