@@ -47,6 +47,9 @@ services:
     build:
       context: .
       dockerfile: platform/backend/Dockerfile
+      cache_from:
+        - poker-backend:latest
+    image: poker-backend:latest
     container_name: poker-backend
     restart: unless-stopped
     environment:
@@ -81,6 +84,9 @@ services:
     build:
       context: ./platform/frontend
       dockerfile: Dockerfile
+      cache_from:
+        - poker-frontend:latest
+    image: poker-frontend:latest
     container_name: poker-frontend
     restart: unless-stopped
     ports:
@@ -140,28 +146,6 @@ services:
       - ./observability/grafana/provisioning:/etc/grafana/provisioning
     depends_on:
       - loki
-    networks:
-      - poker-network
-
-  # DbGate - Database management tool
-  dbgate:
-    image: dbgate/dbgate
-    container_name: poker-engine-dbgate
-    restart: unless-stopped
-    ports:
-      - "10080:3000"
-    environment:
-      - CONNECTIONS=poker_db
-      - LABEL_poker_db=Poker Platform Database
-      - SERVER_poker_db=db
-      - USER_poker_db=${DB_USER:-poker_user}
-      - PASSWORD_poker_db=${DB_PASSWORD:-poker_password}
-      - PORT_poker_db=3306
-      - ENGINE_poker_db=mysql@dbgate-plugin-mysql
-      - DATABASE_poker_db=${DB_NAME:-poker_platform}
-    depends_on:
-      db:
-        condition: service_healthy
     networks:
       - poker-network
 
