@@ -455,7 +455,7 @@ func handleWSMessageWrapper(c *websocket.Client, msg websocket.WSMessage) {
 			}
 		}
 
-		events.ProcessGameAction(c.UserID, c.TableID, action, requestID, amount, appConfig.Database, bridge)
+		events.ProcessGameAction(c.UserID, c.TableID, action, requestID, amount, appConfig.Database, bridge, appConfig.HistoryTracker)
 
 	case "ping":
 		websocket.SendToClient(c, websocket.WSMessage{Type: "pong"})
@@ -506,6 +506,7 @@ func handleEvent(tableID string, event pokerModels.Event, gameType pokerModels.G
 			broadcastTableStateWrapper,
 			syncPlayerChipsWrapper,
 			syncFinalChipsWrapper,
+			appConfig.HistoryTracker,
 		)
 	}
 }

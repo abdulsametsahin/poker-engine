@@ -8,6 +8,7 @@ import (
 	"poker-platform/backend/internal/db"
 	"poker-platform/backend/internal/models"
 	"poker-platform/backend/internal/server/game"
+	"poker-platform/backend/internal/server/history"
 
 	pokerModels "poker-engine/models"
 )
@@ -21,6 +22,7 @@ func HandleEngineEvent(
 	broadcastFunc func(string),
 	syncChipsFunc func(string),
 	syncFinalChipsFunc func(string),
+	historyTracker *history.HistoryTracker,
 ) {
 	log.Printf("[ENGINE_EVENT] Table %s: %s", tableID, event.Event)
 
@@ -31,8 +33,56 @@ func HandleEngineEvent(
 		log.Printf("[ENGINE_EVENT] Hand #%v started on table %s", handNumber, tableID)
 		log.Printf("[HAND_START] Hand #%v - Dealer position: %v, SB position: %v, BB position: %v",
 			handNumber, data["dealerPosition"], data["smallBlindPosition"], data["bigBlindPosition"])
+
 		// Create hand record at the start of the hand
 		game.CreateHandRecord(bridge, database, tableID, event)
+
+		// Get the created hand ID and record the event
+		handID, exists := bridge.GetCurrentHandID(tableID)
+		if exists && historyTracker != nil {
+			// Reset sequence counter for new hand
+			historyTracker.ResetHandSequence(handID)
+
+			// Get table state for num players
+			bridge.Mu.RLock()
+			table, tableExists := bridge.Tables[tableID]
+			bridge.Mu.RUnlock()
+
+			numPlayers := 0
+			if tableExists {
+				state := table.GetState()
+				for _, p := range state.Players {
+					if p != nil && p.Status != pokerModels.StatusSittingOut {
+						numPlayers++
+					}
+				}
+			}
+
+			// Get blind amounts from table state
+			smallBlind := 0
+			bigBlind := 0
+			if tableExists {
+				var dbTable models.Table
+				if err := database.Where("id = ?", tableID).First(&dbTable).Error; err == nil {
+					smallBlind = dbTable.SmallBlind
+					bigBlind = dbTable.BigBlind
+				}
+			}
+
+			// Record hand_started event
+			historyTracker.RecordHandStarted(
+				handID,
+				tableID,
+				int(handNumber.(int)),
+				int(data["dealerPosition"].(int)),
+				int(data["smallBlindPosition"].(int)),
+				int(data["bigBlindPosition"].(int)),
+				smallBlind,
+				bigBlind,
+				numPlayers,
+			)
+		}
+
 		broadcastFunc(tableID)
 		return
 
@@ -54,6 +104,35 @@ func HandleEngineEvent(
 				}
 			}
 			log.Printf("[HAND_COMPLETE] Pot: %d chips", state.CurrentHand.Pot.Main)
+
+			// Record hand_complete event
+			handID, handExists := bridge.GetCurrentHandID(tableID)
+			if handExists && historyTracker != nil {
+				// Convert winners to map format
+				winnersData := make([]map[string]interface{}, len(state.Winners))
+				for i, winner := range state.Winners {
+					winnersData[i] = map[string]interface{}{
+						"user_id":     winner.PlayerID,
+						"player_name": winner.PlayerName,
+						"amount":      winner.Amount,
+						"hand_rank":   winner.HandRank,
+					}
+				}
+
+				// Convert community cards to strings
+				cardStrs := make([]string, len(state.CurrentHand.CommunityCards))
+				for i, card := range state.CurrentHand.CommunityCards {
+					cardStrs[i] = card.String()
+				}
+
+				finalPot := state.CurrentHand.Pot.Main + game.SumSidePots(state.CurrentHand.Pot.Side)
+				bettingRound := string(state.CurrentHand.BettingRound)
+
+				historyTracker.RecordHandComplete(handID, tableID, winnersData, finalPot, cardStrs, bettingRound)
+
+				// Cleanup sequence counter after hand completes
+				historyTracker.CleanupHandSequence(handID)
+			}
 		}
 
 		// Update hand data with final results
@@ -168,6 +247,19 @@ func HandleEngineEvent(
 			roundName := string(state.CurrentHand.BettingRound)
 			cards := state.CurrentHand.CommunityCards
 			log.Printf("[ROUND_ADVANCED] %s - Community cards: %v", roundName, cards)
+
+			// Record round_advanced event
+			handID, handExists := bridge.GetCurrentHandID(tableID)
+			if handExists && historyTracker != nil {
+				// Convert cards to strings
+				cardStrs := make([]string, len(cards))
+				for i, card := range cards {
+					cardStrs[i] = card.String()
+				}
+
+				pot := state.CurrentHand.Pot.Main + game.SumSidePots(state.CurrentHand.Pot.Side)
+				historyTracker.RecordRoundAdvanced(handID, tableID, roundName, cardStrs, pot)
+			}
 		}
 
 		broadcastFunc(tableID)
@@ -190,6 +282,7 @@ func ProcessGameAction(
 	amount int,
 	database *db.DB,
 	bridge *game.GameBridge,
+	historyTracker *history.HistoryTracker,
 ) {
 	// Check for duplicate request (idempotency)
 	if bridge.ActionTracker.IsDuplicate(requestID, userID) {
@@ -253,6 +346,7 @@ func ProcessGameAction(
 		bridge.Mu.RUnlock()
 
 		if hasHandID && handID > 0 {
+			// Save to hand_actions table (legacy)
 			handAction := models.HandAction{
 				HandID:       handID,
 				UserID:       userID,
@@ -265,6 +359,38 @@ func ProcessGameAction(
 				log.Printf("[ACTION] ERROR: Failed to save hand action to DB: %v", err)
 			} else {
 				log.Printf("[ACTION] Saved action %s by %s for hand %d", action, userID, handID)
+			}
+
+			// Also save to game_events table for complete history
+			if historyTracker != nil {
+				// Get player name and pot info
+				bridge.Mu.RLock()
+				table, tableExists := bridge.Tables[tableID]
+				bridge.Mu.RUnlock()
+
+				playerName := ""
+				currentBet := 0
+				potAfter := 0
+
+				if tableExists {
+					state := table.GetState()
+					for _, p := range state.Players {
+						if p != nil && p.PlayerID == userID {
+							playerName = p.PlayerName
+							break
+						}
+					}
+					if state.CurrentHand != nil {
+						currentBet = state.CurrentHand.CurrentBet
+						potAfter = state.CurrentHand.Pot.Main + game.SumSidePots(state.CurrentHand.Pot.Side)
+					}
+				}
+
+				historyTracker.RecordPlayerAction(
+					handID, tableID, userID, playerName,
+					action, amount, bettingRound,
+					currentBet, potAfter,
+				)
 			}
 		} else {
 			log.Printf("[ACTION] WARNING: No hand ID found for table %s to save action", tableID)

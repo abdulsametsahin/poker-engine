@@ -13,6 +13,7 @@ import (
 	"poker-platform/backend/internal/models"
 	"poker-platform/backend/internal/recovery"
 	redisClient "poker-platform/backend/internal/redis"
+	"poker-platform/backend/internal/server/history"
 	"poker-platform/backend/internal/tournament"
 
 	"poker-engine/engine"
@@ -32,6 +33,7 @@ type AppConfig struct {
 	EliminationTracker  *tournament.EliminationTracker
 	Consolidator        *tournament.Consolidator
 	PrizeDistributor    *tournament.PrizeDistributor
+	HistoryTracker      *history.HistoryTracker
 }
 
 // GetEnv returns an environment variable value or a fallback
@@ -74,6 +76,7 @@ func InitializeServices(dbConfig db.Config, redisConfig redisClient.Config, jwtS
 	eliminationTracker := tournament.NewEliminationTracker(database.DB)
 	consolidator := tournament.NewConsolidator(database.DB)
 	prizeDistributor := tournament.NewPrizeDistributor(database.DB, currencyService)
+	historyTracker := history.NewHistoryTracker(database)
 
 	// Connect prize distributor to elimination tracker
 	eliminationTracker.SetPrizeDistributor(prizeDistributor)
@@ -90,6 +93,7 @@ func InitializeServices(dbConfig db.Config, redisConfig redisClient.Config, jwtS
 		EliminationTracker: eliminationTracker,
 		Consolidator:       consolidator,
 		PrizeDistributor:   prizeDistributor,
+		HistoryTracker:     historyTracker,
 	}
 
 	return config, nil
