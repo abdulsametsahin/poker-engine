@@ -95,7 +95,32 @@ export const PokerTable: React.FC<PokerTableProps> = memo(({
       };
     };
 
-    return { getPlayerPosition, getDealerButtonPosition };
+    // Position blind buttons offset from dealer to avoid bet amount overlap
+    const getBlindButtonPosition = (playerIndex: number, total: number, offset: 'left' | 'right') => {
+      let adjustedIndex = playerIndex;
+      if (currentUserIndex !== -1) {
+        adjustedIndex = (playerIndex - currentUserIndex + total) % total;
+      }
+
+      const angle = (adjustedIndex / total) * 2 * Math.PI + Math.PI / 2;
+      const radiusX = 35;
+      const radiusY = 31;
+
+      // Calculate base position
+      const baseX = 50 + radiusX * Math.cos(angle);
+      const baseY = 50 + radiusY * Math.sin(angle);
+
+      // Calculate perpendicular offset to move left or right relative to the direction
+      const perpAngle = angle + (offset === 'left' ? Math.PI / 2 : -Math.PI / 2);
+      const offsetDistance = 6; // Percentage units to offset
+
+      return {
+        left: `${baseX + offsetDistance * Math.cos(perpAngle)}%`,
+        top: `${baseY + offsetDistance * Math.sin(perpAngle)}%`,
+      };
+    };
+
+    return { getPlayerPosition, getDealerButtonPosition, getBlindButtonPosition };
   }, [players, currentUserId]);
 
   // Find dealer index
@@ -352,7 +377,7 @@ export const PokerTable: React.FC<PokerTableProps> = memo(({
       {small_blind_position !== undefined && small_blind_position >= 0 && players.length > 1 && (
         <BlindButton
           type="SB"
-          position={getDealerButtonPosition(small_blind_position, players.length)}
+          position={getBlindButtonPosition(small_blind_position, players.length, 'left')}
         />
       )}
 
@@ -360,7 +385,7 @@ export const PokerTable: React.FC<PokerTableProps> = memo(({
       {big_blind_position !== undefined && big_blind_position >= 0 && players.length > 1 && (
         <BlindButton
           type="BB"
-          position={getDealerButtonPosition(big_blind_position, players.length)}
+          position={getBlindButtonPosition(big_blind_position, players.length, 'right')}
         />
       )}
 
