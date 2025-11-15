@@ -13,9 +13,9 @@ export COMPOSE_DOCKER_CLI_BUILD=1
 
 # Build with progress output
 echo "📦 Building services with BuildKit cache..."
-docker-compose build --parallel
+docker compose build --parallel
 
 echo "✅ Build complete!"
 echo ""
 echo "To start the services, run:"
-echo "  docker-compose up -d"
+echo "  docker compose up -d"
