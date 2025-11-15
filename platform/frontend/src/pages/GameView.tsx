@@ -203,23 +203,11 @@ export const GameView: React.FC = () => {
       if (newState.action_sequence > lastActionSequence) {
         setLastActionSequence(newState.action_sequence);
 
-        // Clear pending action if:
-        // 1. Turn changed away from us (our action was processed)
-        // 2. OR sequence advanced while we still have turn (happens in new round with same player)
+        // Clear pending action immediately when sequence advances
+        // This indicates the server processed an action
         if (pendingAction) {
-          const currentTurn = newState.current_turn;
-
-          // If turn changed away from us, our action was confirmed
-          if (currentTurn !== currentUserId) {
-            addConsoleLog('ACTION', `Action ${pendingAction.type} confirmed`, 'success');
-            setPendingAction(null);
-          }
-          // If we're still current turn but sequence advanced, also clear
-          // (happens in heads-up when same player acts first in new round)
-          else if (newState.action_sequence > lastActionSequence) {
-            addConsoleLog('ACTION', `Action ${pendingAction.type} confirmed (sequence advanced)`, 'success');
-            setPendingAction(null);
-          }
+          addConsoleLog('ACTION', `Action ${pendingAction.type} confirmed`, 'success');
+          setPendingAction(null);
         }
       }
 
@@ -292,16 +280,41 @@ export const GameView: React.FC = () => {
       if (tableState?.status !== newState.status) {
         addConsoleLog('GAME_STATE', `Status changed: ${tableState?.status || 'none'} → ${newState.status}`, 'info');
 
-        // Log hand start
+        // Log and track hand start
         if (newState.status === 'playing' && tableState?.status !== 'playing') {
           addConsoleLog('HAND_START', 'New hand started', 'success');
+          
+          // Add hand_started event to history
+          setHistory(prev => [...prev, {
+            id: `hand_started-${Date.now()}`,
+            eventType: 'hand_started',
+            timestamp: new Date(),
+            metadata: {
+              hand_number: prev.length + 1, // Simple hand counter
+            },
+          }]);
         }
       }
 
+      // Track betting round changes and add to history
       if (tableState?.betting_round !== newState.betting_round && newState.betting_round) {
         const communityCards = newState.community_cards || [];
         const cardsStr = communityCards.length > 0 ? ` - Cards: ${communityCards.join(' ')}` : '';
         addConsoleLog('GAME_STATE', `Betting round: ${newState.betting_round}${cardsStr}`, 'info');
+
+        // Add round_advanced event to history (for flop, turn, river)
+        if (newState.betting_round !== 'preflop' && newState.betting_round !== 'waiting') {
+          setHistory(prev => [...prev, {
+            id: `round_advanced-${Date.now()}`,
+            eventType: 'round_advanced',
+            timestamp: new Date(),
+            metadata: {
+              new_round: newState.betting_round,
+              round: newState.betting_round,
+              community_cards: communityCards,
+            },
+          }]);
+        }
       }
 
       setTableState(newState);
@@ -316,6 +329,18 @@ export const GameView: React.FC = () => {
         addConsoleLog('HAND_COMPLETE', `Winners: ${winnersStr}${cardsStr}`, 'success');
         addConsoleLog('HAND_COMPLETE', `Pot: ${newState.pot} chips`, 'info');
         setShowHandComplete(true);
+
+        // Add hand_complete event to history
+        setHistory(prev => [...prev, {
+          id: `hand_complete-${Date.now()}`,
+          eventType: 'hand_complete',
+          timestamp: new Date(),
+          metadata: {
+            winners: newState.winners,
+            final_pot: newState.pot,
+            pot: newState.pot,
+          },
+        }]);
       }
     };
 
@@ -408,7 +433,7 @@ export const GameView: React.FC = () => {
 
     const handleActionConfirmed = (message: WSMessage) => {
       // Immediate confirmation from server that action was processed
-      const { user_id, action, success } = message.payload;
+      const { user_id, action } = message.payload;
 
       if (user_id === currentUserId && pendingAction?.type === action) {
         addConsoleLog('ACTION', `Action ${action} confirmed by server`, 'success');
