@@ -53,7 +53,7 @@ export const PokerTable: React.FC<PokerTableProps> = memo(({
 
   // Calculate positions for oval perimeter layout
   // Current user is always positioned at the bottom, others arranged clockwise
-  const { getPlayerPosition, getDealerButtonPosition } = useMemo(() => {
+  const { getPlayerPosition, getDealerButtonPosition, getBlindButtonPosition } = useMemo(() => {
     const currentUserIndex = players.findIndex(p => p?.user_id === currentUserId);
 
     const getPlayerPosition = (index: number, total: number) => {
