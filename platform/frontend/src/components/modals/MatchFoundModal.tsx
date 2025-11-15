@@ -5,42 +5,52 @@ import { COLORS, RADIUS, GAME } from '../../constants';
 interface MatchFoundModalProps {
   open: boolean;
   gameMode: string;
+  startDeadline?: string;
   onCountdownComplete: () => void;
 }
 
 export const MatchFoundModal: React.FC<MatchFoundModalProps> = ({
   open,
   gameMode,
+  startDeadline,
   onCountdownComplete,
 }) => {
   const [countdown, setCountdown] = useState(10);
   const [progress, setProgress] = useState(100);
 
   useEffect(() => {
-    if (!open) {
+    if (!open || !startDeadline) {
       setCountdown(10);
       setProgress(100);
       return;
     }
 
-    const interval = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          onCountdownComplete();
-          return 0;
-        }
-        return prev - 1;
-      });
+    // Parse the deadline from the server (ISO string)
+    const deadlineTime = new Date(startDeadline).getTime();
+    // Get total countdown duration from env or default to 10 seconds
+    const totalTime = parseInt(process.env.REACT_APP_MATCHMAKING_COUNTDOWN_SECONDS || '10', 10);
 
-      setProgress((prev) => {
-        const newProgress = prev - (100 / 10);
-        return newProgress < 0 ? 0 : newProgress;
-      });
-    }, 1000);
+    const updateTimer = () => {
+      const now = Date.now();
+      const remaining = Math.max(0, deadlineTime - now);
+      const remainingSeconds = Math.ceil(remaining / 1000);
+
+      setCountdown(remainingSeconds);
+      setProgress((remainingSeconds / totalTime) * 100);
+
+      if (remainingSeconds <= 0) {
+        onCountdownComplete();
+      }
+    };
+
+    // Update immediately
+    updateTimer();
+
+    // Update every 100ms for smooth countdown
+    const interval = setInterval(updateTimer, 100);
 
     return () => clearInterval(interval);
-  }, [open, onCountdownComplete]);
+  }, [open, startDeadline, onCountdownComplete]);
 
   const getGameModeName = (mode: string) => {
     switch (mode) {

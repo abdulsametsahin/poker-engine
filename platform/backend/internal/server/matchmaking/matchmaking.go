@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"strconv"
 	"time"
 
 	"poker-platform/backend/internal/db"
@@ -15,6 +17,22 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
+
+// getMatchmakingCountdown returns the countdown duration from env or default (10 seconds)
+func getMatchmakingCountdown() time.Duration {
+	secondsStr := os.Getenv("MATCHMAKING_COUNTDOWN_SECONDS")
+	if secondsStr == "" {
+		return 10 * time.Second
+	}
+
+	seconds, err := strconv.Atoi(secondsStr)
+	if err != nil || seconds <= 0 {
+		log.Printf("Invalid MATCHMAKING_COUNTDOWN_SECONDS value: %s, using default 10", secondsStr)
+		return 10 * time.Second
+	}
+
+	return time.Duration(seconds) * time.Second
+}
 
 // MatchmakingQueueEntry represents an entry in the matchmaking queue
 type MatchmakingQueueEntry struct {
@@ -169,6 +187,7 @@ func ProcessMatchmaking(
 	createTableFunc func(tableID, gameType string, smallBlind, bigBlind, maxPlayers, minBuyIn, maxBuyIn int),
 	addPlayerFunc func(tableID, userID, username string, seatNumber, buyIn int),
 	sendMatchFoundFunc func(userID, tableID, gameMode string),
+	checkStartFunc func(tableID string),
 ) {
 	preset, ok := game.TablePresets[gameMode]
 	if !ok {
@@ -290,6 +309,14 @@ func ProcessMatchmaking(
 	}
 
 	log.Printf("Match created! Table: %s, Players: %d", tableID, len(players))
+
+	// Start the game after countdown completes
+	countdownDuration := getMatchmakingCountdown()
+	go func() {
+		time.Sleep(countdownDuration)
+		log.Printf("Starting game for table %s after %.0f second countdown", tableID, countdownDuration.Seconds())
+		checkStartFunc(tableID)
+	}()
 }
 
 // SendMatchFoundMessage sends a match found notification via WebSocket
@@ -308,11 +335,16 @@ func SendMatchFoundMessage(bridge *game.GameBridge, userID, tableID, gameMode st
 	}
 
 	if sender, ok := client.(Sender); ok {
+		// Calculate game start deadline using configured countdown duration
+		countdownDuration := getMatchmakingCountdown()
+		startDeadline := time.Now().Add(countdownDuration)
+
 		msg := map[string]interface{}{
 			"type": "match_found",
 			"payload": map[string]interface{}{
-				"table_id":  tableID,
-				"game_mode": gameMode,
+				"table_id":        tableID,
+				"game_mode":       gameMode,
+				"start_deadline":  startDeadline.Format(time.RFC3339),
 			},
 		}
 		data, _ := json.Marshal(msg)

@@ -167,7 +167,7 @@ export const Lobby: React.FC = () => {
     queueSize: number;
     required: number;
   } | null>(null);
-  const [matchFound, setMatchFound] = useState<{ tableId: string; gameMode: string } | null>(null);
+  const [matchFound, setMatchFound] = useState<{ tableId: string; gameMode: string; startDeadline: string } | null>(null);
 
   const loadActiveTables = async () => {
     try {
@@ -196,12 +196,19 @@ export const Lobby: React.FC = () => {
 
   // Listen for match_found WebSocket event
   useEffect(() => {
-    const handler = (message: { payload: { table_id: string; game_mode?: string } }) => {
-      const { table_id } = message.payload;
+    const handler = (message: { payload: { table_id: string; game_mode?: string; start_deadline?: string } }) => {
+      const { table_id, start_deadline } = message.payload;
       const gameMode = matchmaking?.gameMode || 'heads_up';
 
+      // Get countdown duration from env or default to 10 seconds
+      const countdownSeconds = parseInt(process.env.REACT_APP_MATCHMAKING_COUNTDOWN_SECONDS || '10', 10);
+
       setMatchmaking(null);
-      setMatchFound({ tableId: table_id, gameMode });
+      setMatchFound({
+        tableId: table_id,
+        gameMode,
+        startDeadline: start_deadline || new Date(Date.now() + countdownSeconds * 1000).toISOString()
+      });
       showSuccess('Match found!');
     };
 
@@ -714,6 +721,7 @@ export const Lobby: React.FC = () => {
       <MatchFoundModal
         open={!!matchFound}
         gameMode={matchFound?.gameMode || 'heads_up'}
+        startDeadline={matchFound?.startDeadline}
         onCountdownComplete={handleCountdownComplete}
       />
     </AppLayout>

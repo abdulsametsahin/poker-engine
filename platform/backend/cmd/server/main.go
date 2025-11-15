@@ -288,6 +288,7 @@ func processMatchmakingWrapper(gameMode string) {
 		createEngineTableWrapper,
 		addPlayerToEngineWrapper,
 		sendMatchFoundWrapper,
+		checkAndStartGameWrapper,
 	)
 }
 
