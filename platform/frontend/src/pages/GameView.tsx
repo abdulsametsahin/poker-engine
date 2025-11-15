@@ -70,20 +70,7 @@ export const GameView: React.FC = () => {
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [lastActionSequence, setLastActionSequence] = useState<number>(0);
   const [balanceChange, setBalanceChange] = useState<number | null>(null);
-  const [history, setHistory] = useState<any[]>(() => {
-    // Load history from localStorage on mount
-    try {
-      const savedHistory = localStorage.getItem(`game_history_${tableId}`);
-      return savedHistory ? JSON.parse(savedHistory, (key, value) => {
-        // Restore Date objects
-        if (key === 'timestamp') return new Date(value);
-        return value;
-      }) : [];
-    } catch (error) {
-      console.error('Failed to load history from localStorage:', error);
-      return [];
-    }
-  });
+  const [history, setHistory] = useState<any[]>([]);
   const [chatMessages, setChatMessages] = useState<any[]>([]);
 
   // Find current user
@@ -96,17 +83,6 @@ export const GameView: React.FC = () => {
   }, [currentUserId]);
 
   const isMyTurn = tableState?.current_turn === currentUserId;
-
-  // Save history to localStorage whenever it changes
-  useEffect(() => {
-    if (tableId && history.length > 0) {
-      try {
-        localStorage.setItem(`game_history_${tableId}`, JSON.stringify(history));
-      } catch (error) {
-        console.error('Failed to save history to localStorage:', error);
-      }
-    }
-  }, [history, tableId]);
 
   // Debug logging
   useEffect(() => {
@@ -399,15 +375,6 @@ export const GameView: React.FC = () => {
           showSuccess('Game complete!');
         }
       }, 5000); // Show hand results for 5 seconds first
-
-      // Clear history from localStorage when game ends
-      if (tableId) {
-        try {
-          localStorage.removeItem(`game_history_${tableId}`);
-        } catch (error) {
-          console.error('Failed to clear history from localStorage:', error);
-        }
-      }
     };
 
     const handleError = (message: WSMessage<ErrorPayload>) => {
@@ -517,16 +484,16 @@ export const GameView: React.FC = () => {
 
     const handleBalanceUpdate = (message: WSMessage) => {
       const payload = message.payload as any;
-      
+
       // Only show animation if this is for the current user
       if (payload.user_id === currentUserId) {
         setBalanceChange(payload.change);
-        
+
         // Clear animation after 2 seconds
         setTimeout(() => {
           setBalanceChange(null);
         }, 2100);
-        
+
         // Show toast notification
         if (payload.change > 0) {
           showSuccess(`+${payload.change} chips: ${payload.reason}`);
@@ -534,6 +501,28 @@ export const GameView: React.FC = () => {
           showWarning(`${payload.change} chips: ${payload.reason}`);
         }
       }
+    };
+
+    const handleHistoryLog = (message: WSMessage) => {
+      const payload = message.payload as any;
+
+      // Only process messages for our table
+      if (payload.table_id !== tableId) {
+        return;
+      }
+
+      // Convert backend history entries to frontend format
+      const entries = (payload.entries || []).map((entry: any) => ({
+        id: entry.id,
+        eventType: entry.event_type,
+        playerName: entry.player_name,
+        action: entry.action,
+        amount: entry.amount,
+        timestamp: new Date(entry.timestamp),
+        metadata: entry.metadata,
+      }));
+
+      setHistory(entries);
     };
 
     // Register handlers and store cleanup functions
@@ -548,6 +537,7 @@ export const GameView: React.FC = () => {
     const cleanup9 = addMessageHandler('action_confirmed', handleActionConfirmed);
     const cleanup10 = addMessageHandler('player_action_broadcast', handlePlayerActionBroadcast);
     const cleanup11 = addMessageHandler('balance_update', handleBalanceUpdate);
+    const cleanup12 = addMessageHandler('history_log', handleHistoryLog);
 
     return () => {
       cleanup1();
@@ -561,6 +551,7 @@ export const GameView: React.FC = () => {
       cleanup9();
       cleanup10();
       cleanup11();
+      cleanup12();
     };
   }, [addMessageHandler, showSuccess, showError, showWarning, tableId, tournamentId, currentUserId, pendingAction, tableState, lastActionSequence, currentPlayer]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -895,6 +886,7 @@ export const GameView: React.FC = () => {
             justifyContent: 'center',
             gap: 2,
             zIndex: 11,
+            marginRight: '340px', // Account for sidebar width
           }}
         >
           <Box
@@ -929,6 +921,7 @@ export const GameView: React.FC = () => {
             position: 'relative',
             zIndex: 10,
             boxShadow: '0 -8px 32px rgba(0, 0, 0, 0.5)',
+            marginRight: '340px', // Account for sidebar width
 
             // Animated glow effect on top border
             '&::before': {

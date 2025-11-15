@@ -71,7 +71,10 @@ func (g *Game) StartNewHand() error {
 	}
 
 	g.table.Status = models.StatusPlaying
-	
+
+	// Add hand started to history
+	g.addHandStartedHistory()
+
 	// CRITICAL DEADLOCK FIX: Fire event asynchronously
 	if g.onEvent != nil {
 		event := models.Event{
@@ -86,7 +89,7 @@ func (g *Game) StartNewHand() error {
 		}
 		go g.onEvent(event)
 	}
-	
+
 	g.startActionTimer()
 	return nil
 }
@@ -254,6 +257,9 @@ func (g *Game) ProcessAction(playerID string, action models.PlayerAction, amount
 	g.table.CurrentHand.LastActionTime = time.Now()
 	g.table.CurrentHand.HasRealActionThisRound = true // Mark that a real (non-timeout) action occurred this round
 	g.table.CurrentHand.HasRealActionThisHand = true  // Mark that a real (non-timeout) action occurred this hand
+
+	// Add player action to history
+	g.addPlayerActionHistory(playerID, player.PlayerName, string(action), amount)
 
 	// CRITICAL DEADLOCK FIX: Fire event asynchronously to prevent deadlock
 	// If event handler tries to call ProcessAction, it would deadlock waiting for mutex
@@ -433,6 +439,7 @@ func (g *Game) dealNextRoundCards() bool {
 		if cards, err := g.table.Deck.DealMultiple(3); err == nil {
 			g.table.CurrentHand.CommunityCards = cards
 			g.table.CurrentHand.BettingRound = models.RoundFlop
+			g.addRoundAdvancedHistory(models.RoundFlop)
 			return true
 		}
 	case models.RoundFlop, models.RoundTurn:
@@ -440,8 +447,10 @@ func (g *Game) dealNextRoundCards() bool {
 			g.table.CurrentHand.CommunityCards = append(g.table.CurrentHand.CommunityCards, card)
 			if g.table.CurrentHand.BettingRound == models.RoundFlop {
 				g.table.CurrentHand.BettingRound = models.RoundTurn
+				g.addRoundAdvancedHistory(models.RoundTurn)
 			} else {
 				g.table.CurrentHand.BettingRound = models.RoundRiver
+				g.addRoundAdvancedHistory(models.RoundRiver)
 			}
 			return true
 		}
@@ -497,6 +506,9 @@ func (g *Game) completeHand() {
 
 	g.table.Status = models.StatusHandComplete
 	g.stopActionTimer()
+
+	// Add hand complete to history
+	g.addHandCompleteHistory()
 
 	// CRITICAL DEADLOCK FIX: Fire event asynchronously
 	if g.onEvent != nil {
@@ -847,6 +859,91 @@ func (g *Game) Resume() error {
 	}
 
 	return nil
+}
+
+// addHistoryEntry adds a history entry to the table's history
+func (g *Game) addHistoryEntry(entry models.HistoryEntry) {
+	if g.table == nil {
+		return
+	}
+	g.table.History = append(g.table.History, entry)
+}
+
+// addPlayerActionHistory adds a player action to the history
+func (g *Game) addPlayerActionHistory(playerID, playerName, action string, amount int) {
+	entry := models.HistoryEntry{
+		ID:         fmt.Sprintf("%s-%d", playerID, time.Now().UnixNano()),
+		EventType:  models.HistoryPlayerAction,
+		PlayerID:   playerID,
+		PlayerName: playerName,
+		Action:     action,
+		Amount:     amount,
+		Timestamp:  time.Now(),
+	}
+	g.addHistoryEntry(entry)
+}
+
+// addHandStartedHistory adds a hand started event to the history
+func (g *Game) addHandStartedHistory() {
+	if g.table.CurrentHand == nil {
+		return
+	}
+	entry := models.HistoryEntry{
+		ID:        fmt.Sprintf("hand_started-%d", time.Now().UnixNano()),
+		EventType: models.HistoryHandStarted,
+		Timestamp: time.Now(),
+		Metadata: map[string]interface{}{
+			"hand_number": g.table.CurrentHand.HandNumber,
+		},
+	}
+	g.addHistoryEntry(entry)
+}
+
+// addRoundAdvancedHistory adds a round advanced event to the history
+func (g *Game) addRoundAdvancedHistory(round models.BettingRound) {
+	if g.table.CurrentHand == nil {
+		return
+	}
+	communityCards := make([]interface{}, len(g.table.CurrentHand.CommunityCards))
+	for i, card := range g.table.CurrentHand.CommunityCards {
+		communityCards[i] = map[string]interface{}{
+			"rank": card.Rank,
+			"suit": card.Suit,
+		}
+	}
+	entry := models.HistoryEntry{
+		ID:        fmt.Sprintf("round_advanced-%d", time.Now().UnixNano()),
+		EventType: models.HistoryRoundAdvanced,
+		Timestamp: time.Now(),
+		Metadata: map[string]interface{}{
+			"round":           string(round),
+			"community_cards": communityCards,
+		},
+	}
+	g.addHistoryEntry(entry)
+}
+
+// addHandCompleteHistory adds a hand complete event to the history
+func (g *Game) addHandCompleteHistory() {
+	winners := make([]interface{}, len(g.table.Winners))
+	for i, winner := range g.table.Winners {
+		winners[i] = map[string]interface{}{
+			"player_id":   winner.PlayerID,
+			"player_name": winner.PlayerName,
+			"amount":      winner.Amount,
+			"hand_rank":   winner.HandRank,
+		}
+	}
+	entry := models.HistoryEntry{
+		ID:        fmt.Sprintf("hand_complete-%d", time.Now().UnixNano()),
+		EventType: models.HistoryHandComplete,
+		Timestamp: time.Now(),
+		Metadata: map[string]interface{}{
+			"winners": winners,
+			"pot":     g.table.CurrentHand.Pot.Main,
+		},
+	}
+	g.addHistoryEntry(entry)
 }
 
 // UpdateStatus updates the game status (for external control, e.g., tournament completion)

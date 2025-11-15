@@ -75,15 +75,37 @@ type Winner struct {
 	HandCards  []Card `json:"handCards"`
 }
 
+type HistoryEventType string
+
+const (
+	HistoryPlayerAction  HistoryEventType = "player_action"
+	HistoryHandStarted   HistoryEventType = "hand_started"
+	HistoryRoundAdvanced HistoryEventType = "round_advanced"
+	HistoryHandComplete  HistoryEventType = "hand_complete"
+	HistoryShowdown      HistoryEventType = "showdown"
+)
+
+type HistoryEntry struct {
+	ID         string                 `json:"id"`
+	EventType  HistoryEventType       `json:"event_type"`
+	PlayerID   string                 `json:"player_id,omitempty"`
+	PlayerName string                 `json:"player_name,omitempty"`
+	Action     string                 `json:"action,omitempty"`
+	Amount     int                    `json:"amount,omitempty"`
+	Timestamp  time.Time              `json:"timestamp"`
+	Metadata   map[string]interface{} `json:"metadata,omitempty"`
+}
+
 type Table struct {
-	TableID                    string        `json:"tableId"`
-	GameType                   GameType      `json:"gameType"`
-	Status                     TableStatus   `json:"status"`
-	Config                     TableConfig   `json:"config"`
-	CurrentHand                *CurrentHand  `json:"currentHand,omitempty"`
-	Players                    []*Player     `json:"players"`
-	Winners                    []Winner      `json:"winners,omitempty"`
-	Deck                       *Deck         `json:"-"`
-	CreatedAt                  time.Time     `json:"createdAt"`
-	ConsecutiveAllTimeoutHands int           `json:"-"` // Tracks consecutive hands where all actions were timeouts
+	TableID                    string         `json:"tableId"`
+	GameType                   GameType       `json:"gameType"`
+	Status                     TableStatus    `json:"status"`
+	Config                     TableConfig    `json:"config"`
+	CurrentHand                *CurrentHand   `json:"currentHand,omitempty"`
+	Players                    []*Player      `json:"players"`
+	Winners                    []Winner       `json:"winners,omitempty"`
+	History                    []HistoryEntry `json:"history,omitempty"`
+	Deck                       *Deck          `json:"-"`
+	CreatedAt                  time.Time      `json:"createdAt"`
+	ConsecutiveAllTimeoutHands int            `json:"-"` // Tracks consecutive hands where all actions were timeouts
 }

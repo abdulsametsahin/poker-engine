@@ -124,6 +124,7 @@ export type WSMessageType =
   | 'game_update'
   | 'game_complete'
   | 'player_action'
+  | 'history_log'
   | 'tournament_paused'
   | 'tournament_resumed'
   | 'tournament_complete'
@@ -238,6 +239,37 @@ export interface ChatMessagePayload {
   username: string;
   message: string;
   timestamp: string;
+}
+
+// History event types
+export type HistoryEventType =
+  | 'player_action'
+  | 'hand_started'
+  | 'round_advanced'
+  | 'hand_complete'
+  | 'showdown';
+
+export interface HistoryEntry {
+  id: string;
+  event_type: HistoryEventType;
+  player_id?: string;
+  player_name?: string;
+  action?: string;
+  amount?: number;
+  timestamp: string;
+  metadata?: {
+    hand_number?: number;
+    round?: string;
+    community_cards?: Card[];
+    winners?: any[];
+    pot?: number;
+    [key: string]: any;
+  };
+}
+
+export interface HistoryLogPayload {
+  table_id: string;
+  entries: HistoryEntry[];
 }
 
 // Table event payloads
