@@ -1,13 +1,12 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Box, Stack, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Typography } from '@mui/material';
-import { ArrowBack, ExitToApp, Terminal, Pause, EmojiEvents, Home } from '@mui/icons-material';
+import { ArrowBack, ExitToApp, Pause, EmojiEvents, Home } from '@mui/icons-material';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useWebSocket } from '../contexts/WebSocketContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { PokerTable } from '../components/game/PokerTable';
 import { GameSidebar } from '../components/game/GameSidebar';
-import { ConsolePanel } from '../components/game/ConsolePanel';
 import { TableSwitcher } from '../components/game/TableSwitcher';
 import { WinnerDisplay, HandCompleteDisplay, TournamentPausedModal } from '../components/modals';
 import { Button } from '../components/common/Button';
@@ -58,8 +57,6 @@ export const GameView: React.FC = () => {
   const [showHandComplete, setShowHandComplete] = useState(false);
   const [showGameComplete, setShowGameComplete] = useState(false);
   const [gameMode, setGameMode] = useState<string>('heads_up');
-  const [consoleOpen, setConsoleOpen] = useState(false);
-  const [consoleLogs, setConsoleLogs] = useState<any[]>([]);
   const [tournamentId, setTournamentId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [lastActionSequence, setLastActionSequence] = useState<number>(0);
@@ -82,20 +79,6 @@ export const GameView: React.FC = () => {
   // Find current user
   const currentUserId = user?.id || tableState?.players?.find(p => p.cards && p.cards.length > 0)?.user_id;
   const currentPlayer = tableState?.players?.find(p => p.user_id === currentUserId);
-
-  // Helper function to add console logs
-  const addConsoleLog = useCallback((category: string, message: string, level: 'info' | 'warning' | 'error' | 'success' | 'debug' = 'info') => {
-    setConsoleLogs(prev => [
-      ...prev,
-      {
-        id: `${Date.now()}-${Math.random()}`,
-        timestamp: new Date(),
-        level,
-        category,
-        message,
-      },
-    ]);
-  }, []);
 
   // Generate unique request ID for idempotency
   const generateRequestId = useCallback(() => {
@@ -181,9 +164,6 @@ export const GameView: React.FC = () => {
         return;
       }
 
-      // Log the message receipt
-      addConsoleLog('WEBSOCKET', `Received ${message.type} message`, 'debug');
-
       const newState = {
         table_id: message.payload.table_id || tableId,
         players: message.payload.players || [],
@@ -206,7 +186,6 @@ export const GameView: React.FC = () => {
         // Clear pending action immediately when sequence advances
         // This indicates the server processed an action
         if (pendingAction) {
-          addConsoleLog('ACTION', `Action ${pendingAction.type} confirmed`, 'success');
           setPendingAction(null);
         }
       }
@@ -240,10 +219,6 @@ export const GameView: React.FC = () => {
                 return prev; // Skip duplicate
               }
 
-              // Log to console only if not a duplicate
-              const amountStr = amount ? ` $${amount}` : '';
-              addConsoleLog('ACTION', `${playerName} ${actionName}${amountStr}`, 'info');
-
               return [...prev, {
                 id: `${newPlayer.user_id}-${Date.now()}`,
                 playerName,
@@ -276,14 +251,10 @@ export const GameView: React.FC = () => {
         // Don't clear history - keep it persistent across hands
       }
 
-      // Log game state changes
+      // Detect transitions between game states
       if (tableState?.status !== newState.status) {
-        addConsoleLog('GAME_STATE', `Status changed: ${tableState?.status || 'none'} → ${newState.status}`, 'info');
-
-        // Log and track hand start
+        // Track state change in history (optional - can be removed if not needed)
         if (newState.status === 'playing' && tableState?.status !== 'playing') {
-          addConsoleLog('HAND_START', 'New hand started', 'success');
-          
           // Add hand_started event to history
           setHistory(prev => [...prev, {
             id: `hand_started-${Date.now()}`,
@@ -299,8 +270,6 @@ export const GameView: React.FC = () => {
       // Track betting round changes and add to history
       if (tableState?.betting_round !== newState.betting_round && newState.betting_round) {
         const communityCards = newState.community_cards || [];
-        const cardsStr = communityCards.length > 0 ? ` - Cards: ${communityCards.join(' ')}` : '';
-        addConsoleLog('GAME_STATE', `Betting round: ${newState.betting_round}${cardsStr}`, 'info');
 
         // Add round_advanced event to history (for flop, turn, river)
         if (newState.betting_round !== 'preflop' && newState.betting_round !== 'waiting') {
@@ -326,8 +295,6 @@ export const GameView: React.FC = () => {
         ).join(', ');
         const communityCards = newState.community_cards || [];
         const cardsStr = communityCards.length > 0 ? ` - Board: ${communityCards.join(' ')}` : '';
-        addConsoleLog('HAND_COMPLETE', `Winners: ${winnersStr}${cardsStr}`, 'success');
-        addConsoleLog('HAND_COMPLETE', `Pot: ${newState.pot} chips`, 'info');
         setShowHandComplete(true);
 
         // Add hand_complete event to history
@@ -380,7 +347,6 @@ export const GameView: React.FC = () => {
         return;
       }
 
-      addConsoleLog('TOURNAMENT', 'Tournament paused - Game on hold', 'warning');
       showWarning('Tournament has been paused. Game is on hold.');
       // Update table state to paused
       setTableState(prev => prev ? { ...prev, status: 'paused' } : null);
@@ -393,7 +359,6 @@ export const GameView: React.FC = () => {
         return;
       }
 
-      addConsoleLog('TOURNAMENT', 'Tournament resumed - Game continuing', 'success');
       showSuccess('Tournament has been resumed. Game continues!');
       // Update table state back to playing
       setTableState(prev => prev ? { ...prev, status: 'playing' } : null);
@@ -406,7 +371,6 @@ export const GameView: React.FC = () => {
         return;
       }
 
-      addConsoleLog('TOURNAMENT', `Tournament complete! Winner: ${message.payload.winner_name}`, 'success');
       showSuccess(`Tournament complete! Winner: ${message.payload.winner_name}`);
       // Store tournament ID for navigation
       setTournamentId(message.payload.tournament_id);
@@ -428,7 +392,6 @@ export const GameView: React.FC = () => {
       };
 
       setChatMessages(prev => [...prev, newMessage]);
-      addConsoleLog('CHAT', `${message.payload.username}: ${message.payload.message}`, 'info');
     };
 
     const handleActionConfirmed = (message: WSMessage) => {
@@ -436,7 +399,6 @@ export const GameView: React.FC = () => {
       const { user_id, action } = message.payload;
 
       if (user_id === currentUserId && pendingAction?.type === action) {
-        addConsoleLog('ACTION', `Action ${action} confirmed by server`, 'success');
         setPendingAction(null); // Clear immediately
       }
     };
@@ -460,7 +422,6 @@ export const GameView: React.FC = () => {
         }
 
         const amountStr = amount ? ` $${amount}` : '';
-        addConsoleLog('ACTION', `${player_name} ${action}${amountStr}`, 'info');
 
         return [...prev, {
           id: `${player_name}-${Date.now()}`,
@@ -497,23 +458,19 @@ export const GameView: React.FC = () => {
       cleanup10();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tableId, addMessageHandler, removeMessageHandler, showSuccess, showError, showWarning, addConsoleLog]);
 
   const handleAction = useCallback((action: string, amount?: number) => {
     // Prevent multiple actions
     if (pendingAction) {
-      addConsoleLog('ACTION', 'Action already pending, please wait...', 'warning');
       return;
     }
 
     // Client-side validation
     if (!isMyTurn) {
-      addConsoleLog('ACTION', 'Not your turn!', 'error');
       return;
     }
 
     if (tableState?.status !== 'playing') {
-      addConsoleLog('ACTION', 'Game not in playing state', 'error');
       return;
     }
 
@@ -528,7 +485,6 @@ export const GameView: React.FC = () => {
       timestamp: Date.now(),
     });
 
-    addConsoleLog('ACTION', `Sending ${action}${amountStr}...`, 'info');
 
     // Send action to server with request_id
     sendMessage({
@@ -545,7 +501,6 @@ export const GameView: React.FC = () => {
     setTimeout(() => {
       setPendingAction(prev => {
         if (prev && prev.requestId === requestId) {
-          addConsoleLog('ACTION', 'Action timeout - clearing pending state', 'warning');
           return null;
         }
         return prev;
@@ -553,7 +508,6 @@ export const GameView: React.FC = () => {
     }, 5000);
 
     // Note: History will be updated automatically when state changes are received
-  }, [pendingAction, isMyTurn, tableState, generateRequestId, sendMessage, addConsoleLog]);
 
   const handleSendChatMessage = useCallback((message: string) => {
     if (!message.trim() || !tableId || !user) return;
@@ -582,8 +536,6 @@ export const GameView: React.FC = () => {
       }
     });
 
-    addConsoleLog('CHAT', `Sent: ${message.trim()}`, 'debug');
-  }, [currentUserId, user, tableId, sendMessage, addConsoleLog]);
 
   const handlePlayAgain = useCallback(() => {
     // Navigate to lobby and automatically join queue with same game mode
@@ -693,20 +645,6 @@ export const GameView: React.FC = () => {
         <Stack direction="row" spacing={1}>
           <TableSwitcher />
           
-          <IconButton
-            onClick={() => setConsoleOpen(true)}
-            sx={{
-              color: COLORS.info.main,
-              '&:hover': {
-                color: COLORS.info.light,
-                background: `${COLORS.info.main}20`,
-              },
-            }}
-            title="View Console Logs"
-          >
-            <Terminal />
-          </IconButton>
-
           <IconButton
             onClick={() => navigate('/lobby')}
             sx={{
@@ -1246,51 +1184,6 @@ export const GameView: React.FC = () => {
       <TournamentPausedModal open={tableState?.status === 'paused'} />
 
       {/* Leave game confirmation dialog */}
-      {/* Console Dialog */}
-      <Dialog
-        open={consoleOpen}
-        onClose={() => setConsoleOpen(false)}
-        maxWidth="lg"
-        fullWidth
-        PaperProps={{
-          sx: {
-            background: COLORS.background.paper,
-            borderRadius: RADIUS.md,
-            border: `1px solid ${COLORS.border.main}`,
-            height: '80vh',
-            maxHeight: '800px',
-          },
-        }}
-      >
-        <DialogTitle
-          sx={{
-            color: COLORS.text.primary,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1,
-            borderBottom: `1px solid ${COLORS.border.main}`,
-          }}
-        >
-          <Terminal sx={{ color: COLORS.info.main }} />
-          Console Logs - Table {tableId}
-        </DialogTitle>
-        <DialogContent sx={{ p: 0, height: 'calc(100% - 120px)' }}>
-          <ConsolePanel logs={consoleLogs} />
-        </DialogContent>
-        <DialogActions sx={{ borderTop: `1px solid ${COLORS.border.main}`, p: 2 }}>
-          <Button
-            variant="ghost"
-            onClick={() => {
-              setConsoleLogs([]);
-            }}
-          >
-            Clear Logs
-          </Button>
-          <Button variant="primary" onClick={() => setConsoleOpen(false)}>
-            Close
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   );
 };

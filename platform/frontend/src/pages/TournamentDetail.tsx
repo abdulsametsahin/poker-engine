@@ -790,7 +790,7 @@ export const TournamentDetail: React.FC = () => {
                     <EmojiEvents sx={{ fontSize: 48, color: COLORS.warning.main }} />
                     <Box flex={1}>
                       <Typography variant="h5" fontWeight="bold" sx={{ color: COLORS.text.primary }}>
-                        🏆 Tournament Winner: {standings[0].username || players.find(p => p.user_id === standings[0].user_id)?.username || 'Unknown'}
+                        Tournament Winner: {standings[0].username || players.find(p => p.user_id === standings[0].user_id)?.username || 'Unknown'}
                       </Typography>
                       {standings[0].prize_amount > 0 && (
                         <Typography variant="h6" sx={{ color: COLORS.success.main, fontWeight: 'bold', mt: 1 }}>
