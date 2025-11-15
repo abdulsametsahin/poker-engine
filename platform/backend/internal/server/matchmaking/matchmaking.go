@@ -240,16 +240,22 @@ func ProcessMatchmaking(
 	tableID := uuid.New().String()
 	tableName := fmt.Sprintf("%s - %s", preset.Name, tableID[:8])
 
+	// Set ready_to_start_at to now + countdown duration
+	// This eliminates race conditions from timing calculations
+	countdownDuration := getMatchmakingCountdown()
+	readyToStartAt := time.Now().Add(countdownDuration)
+
 	table := models.Table{
-		ID:         tableID,
-		Name:       tableName,
-		GameType:   "cash",
-		Status:     "waiting",
-		SmallBlind: preset.SmallBlind,
-		BigBlind:   preset.BigBlind,
-		MaxPlayers: preset.MaxPlayers,
-		MinBuyIn:   &preset.MinBuyIn,
-		MaxBuyIn:   &preset.MaxBuyIn,
+		ID:             tableID,
+		Name:           tableName,
+		GameType:       "cash",
+		Status:         "waiting",
+		SmallBlind:     preset.SmallBlind,
+		BigBlind:       preset.BigBlind,
+		MaxPlayers:     preset.MaxPlayers,
+		MinBuyIn:       &preset.MinBuyIn,
+		MaxBuyIn:       &preset.MaxBuyIn,
+		ReadyToStartAt: &readyToStartAt,
 	}
 
 	if err := database.Create(&table).Error; err != nil {
@@ -311,12 +317,10 @@ func ProcessMatchmaking(
 	log.Printf("Match created! Table: %s, Players: %d", tableID, len(players))
 
 	// Start the game after countdown completes
-	countdownDuration := getMatchmakingCountdown()
+	// The countdown is enforced by the ready_to_start_at timestamp in the database,
+	// so we don't need timing buffers or precision workarounds here
 	go func() {
-		// Add a buffer (500ms) to ensure enough time has passed
-		// This prevents race conditions where the goroutine wakes up slightly early
-		// due to timing precision or scheduling delays
-		time.Sleep(countdownDuration + 500*time.Millisecond)
+		time.Sleep(countdownDuration)
 		log.Printf("Starting game for table %s after %.0f second countdown", tableID, countdownDuration.Seconds())
 		checkStartFunc(tableID)
 	}()
