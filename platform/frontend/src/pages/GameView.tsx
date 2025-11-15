@@ -218,15 +218,23 @@ export const GameView: React.FC = () => {
               ? newPlayer.last_action_amount
               : undefined;
 
-            // Check if this exact action was already added in the last 500ms to prevent duplicates
+            // Check if this exact action was already added in the last 1000ms to prevent duplicates
             setHistory(prev => {
               const now = Date.now();
-              const recentDuplicate = prev.some(entry =>
-                entry.playerName === playerName &&
-                entry.action === actionName &&
-                entry.amount === amount &&
-                now - new Date(entry.timestamp).getTime() < 500
-              );
+              const recentDuplicate = prev.some(entry => {
+                // Match player name and action
+                const samePlayerAction = entry.playerName === playerName && entry.action === actionName;
+
+                // Match amount (handle both undefined and number comparison)
+                const sameAmount = (entry.amount === amount) ||
+                                  (entry.amount === undefined && amount === undefined) ||
+                                  (entry.amount !== undefined && amount !== undefined && entry.amount === amount);
+
+                // Within time window
+                const withinTimeWindow = now - new Date(entry.timestamp).getTime() < 1000;
+
+                return samePlayerAction && sameAmount && withinTimeWindow;
+              });
 
               if (recentDuplicate) {
                 return prev; // Skip duplicate
@@ -476,12 +484,20 @@ export const GameView: React.FC = () => {
       // Add to history
       setHistory(prev => {
         const now = Date.now();
-        const recentDuplicate = prev.some(entry =>
-          entry.playerName === player_name &&
-          entry.action === action &&
-          entry.amount === amount &&
-          now - new Date(entry.timestamp).getTime() < 500
-        );
+        const recentDuplicate = prev.some(entry => {
+          // Match player name and action
+          const samePlayerAction = entry.playerName === player_name && entry.action === action;
+
+          // Match amount (handle both undefined and number comparison)
+          const sameAmount = (entry.amount === amount) ||
+                            (entry.amount === undefined && amount === undefined) ||
+                            (entry.amount !== undefined && amount !== undefined && entry.amount === amount);
+
+          // Within time window
+          const withinTimeWindow = now - new Date(entry.timestamp).getTime() < 1000;
+
+          return samePlayerAction && sameAmount && withinTimeWindow;
+        });
 
         if (recentDuplicate) {
           return prev; // Skip duplicate
