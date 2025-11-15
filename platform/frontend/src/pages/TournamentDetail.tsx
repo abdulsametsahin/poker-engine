@@ -107,6 +107,7 @@ export const TournamentDetail: React.FC = () => {
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [players, setPlayers] = useState<TournamentPlayer[]>([]);
   const [standings, setStandings] = useState<Standing[]>([]);
+  const [tables, setTables] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isRegistered, setIsRegistered] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
@@ -139,6 +140,16 @@ export const TournamentDetail: React.FC = () => {
           setStandings(standingsRes.data.standings || []);
         } catch (error) {
           console.error('Failed to fetch standings:', error);
+        }
+      }
+
+      // Fetch tables if tournament is in progress or paused
+      if (tournamentRes.data.status === 'in_progress' || tournamentRes.data.status === 'paused') {
+        try {
+          const tablesRes = await tournamentAPI.getTournamentTables(id);
+          setTables(tablesRes.data.tables || []);
+        } catch (error) {
+          console.error('Failed to fetch tables:', error);
         }
       }
     } catch (error: any) {
@@ -880,6 +891,50 @@ export const TournamentDetail: React.FC = () => {
                     </TableBody>
                   </Table>
                 </TableContainer>
+              </Box>
+            </Card>
+          )}
+
+          {/* Tournament Tables */}
+          {(tournament.status === 'in_progress' || tournament.status === 'paused') && tables.length > 0 && (
+            <Card>
+              <Box p={3}>
+                <Typography variant="h6" fontWeight="bold" mb={2}>
+                  Tournament Tables
+                </Typography>
+                <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "repeat(2, 1fr)", lg: "repeat(3, 1fr)" }} gap={2}>
+                  {tables.map((table) => (
+                    <Card key={table.id}>
+                      <Box p={2}>
+                        <Stack spacing={1}>
+                          <Typography variant="subtitle1" fontWeight="bold">
+                            {table.name}
+                          </Typography>
+                          <Box display="flex" alignItems="center" justifyContent="space-between">
+                            <Typography variant="body2" color={COLORS.text.secondary}>
+                              Players: {table.players}/{table.max_players}
+                            </Typography>
+                            <Chip
+                              label={table.status}
+                              size="small"
+                              color={table.status === 'playing' ? 'success' : 'default'}
+                            />
+                          </Box>
+                          {isRegistered && (
+                            <Button
+                              variant="primary"
+                              size="small"
+                              onClick={() => navigate(`/game/${table.id}`)}
+                              fullWidth
+                            >
+                              View Table
+                            </Button>
+                          )}
+                        </Stack>
+                      </Box>
+                    </Card>
+                  ))}
+                </Box>
               </Box>
             </Card>
           )}

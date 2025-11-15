@@ -200,7 +200,7 @@ func setupRoutes(r *gin.Engine) {
 
 		// Tournament routes
 		authorized.POST("/api/tournaments", func(c *gin.Context) {
-			serverTournament.HandleCreateTournament(c, appConfig.TournamentService)
+			serverTournament.HandleCreateTournament(c, appConfig.TournamentService, bridge)
 		})
 		authorized.GET("/api/tournaments", func(c *gin.Context) {
 			serverTournament.HandleListTournaments(c, appConfig.TournamentService)
@@ -234,6 +234,9 @@ func setupRoutes(r *gin.Engine) {
 		})
 		authorized.GET("/api/tournaments/:id/standings", func(c *gin.Context) {
 			serverTournament.HandleGetTournamentStandings(c, appConfig.EliminationTracker)
+		})
+		authorized.GET("/api/tournaments/:id/tables", func(c *gin.Context) {
+			serverTournament.HandleGetTournamentTables(c, appConfig.Database)
 		})
 	}
 

@@ -6,6 +6,7 @@ import { ShowdownDisplay } from './ShowdownDisplay';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { OvalTableSVG } from './OvalTableSVG';
 import { DealerButton } from './DealerButton';
+import { BlindButton } from './BlindButton';
 import { COLORS, RADIUS } from '../../constants';
 import { Player, WinnerInfo } from '../../types';
 import { getBettingRoundName } from '../../utils';
@@ -21,6 +22,9 @@ interface TableState {
   current_bet?: number;
   action_deadline?: string;
   winners?: WinnerInfo[];
+  dealer_position?: number;
+  small_blind_position?: number;
+  big_blind_position?: number;
 }
 
 interface PokerTableProps {
@@ -42,6 +46,9 @@ export const PokerTable: React.FC<PokerTableProps> = memo(({
     current_bet = 0,
     action_deadline,
     winners = [],
+    dealer_position,
+    small_blind_position,
+    big_blind_position,
   } = tableState || {};
 
   // Calculate positions for oval perimeter layout
@@ -338,6 +345,22 @@ export const PokerTable: React.FC<PokerTableProps> = memo(({
       {dealerIndex !== -1 && players.length > 1 && (
         <DealerButton
           position={getDealerButtonPosition(dealerIndex, players.length)}
+        />
+      )}
+
+      {/* Small Blind Button */}
+      {small_blind_position !== undefined && small_blind_position >= 0 && players.length > 1 && (
+        <BlindButton
+          type="SB"
+          position={getDealerButtonPosition(small_blind_position, players.length)}
+        />
+      )}
+
+      {/* Big Blind Button */}
+      {big_blind_position !== undefined && big_blind_position >= 0 && players.length > 1 && (
+        <BlindButton
+          type="BB"
+          position={getDealerButtonPosition(big_blind_position, players.length)}
         />
       )}
 

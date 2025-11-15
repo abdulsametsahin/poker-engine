@@ -57,6 +57,9 @@ export const tournamentAPI = {
   // Prize and standings
   getTournamentPrizes: (id: string) => api.get(`/tournaments/${id}/prizes`),
   getTournamentStandings: (id: string) => api.get(`/tournaments/${id}/standings`),
+
+  // Tables
+  getTournamentTables: (id: string) => api.get(`/tournaments/${id}/tables`),
 };
 
 export default api;

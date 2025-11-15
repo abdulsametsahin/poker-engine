@@ -309,9 +309,17 @@ export const PlayerSeat: React.FC<PlayerSeatProps> = memo(({
           <Box
             sx={{
               position: 'absolute',
-              bottom: -24,
-              left: '50%',
-              transform: 'translateX(-50%)',
+              // Position bet to the right for current user (to avoid card overlap)
+              // Position bet below for other players
+              ...(isCurrentUser ? {
+                right: -70,
+                top: '50%',
+                transform: 'translateY(-50%)',
+              } : {
+                bottom: -24,
+                left: '50%',
+                transform: 'translateX(-50%)',
+              }),
               px: 2,
               py: 0.75,
               borderRadius: RADIUS.md,
