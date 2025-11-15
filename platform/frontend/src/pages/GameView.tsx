@@ -522,7 +522,8 @@ export const GameView: React.FC = () => {
       cleanup10();
       cleanup11();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addMessageHandler, showSuccess, showError, showWarning, tableId, tournamentId, currentUserId, pendingAction, tableState, lastActionSequence, currentPlayer]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
 
   const handleAction = useCallback((action: string, amount?: number) => {
     // Prevent multiple actions
@@ -573,6 +574,7 @@ export const GameView: React.FC = () => {
     }, 5000);
 
     // Note: History will be updated automatically when state changes are received
+  }, [isMyTurn, tableState?.status, pendingAction, generateRequestId, sendMessage]);
 
   const handleSendChatMessage = useCallback((message: string) => {
     if (!message.trim() || !tableId || !user) return;
@@ -600,7 +602,7 @@ export const GameView: React.FC = () => {
         timestamp: new Date().toISOString(),
       }
     });
-
+  }, [tableId, user, currentUserId, sendMessage]);
 
   const handlePlayAgain = useCallback(() => {
     // Navigate to lobby and automatically join queue with same game mode
