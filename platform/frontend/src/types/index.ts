@@ -129,6 +129,7 @@ export type WSMessageType =
   | 'tournament_complete'
   | 'player_eliminated'
   | 'blind_level_increased'
+  | 'balance_update'
   | 'chat_message'
   | 'table_created'
   | 'table_updated'
@@ -214,6 +215,14 @@ export interface BlindLevelIncreasedPayload {
   small_blind: number;
   big_blind: number;
   ante?: number;
+}
+
+export interface BalanceUpdatePayload {
+  user_id: string;
+  old_balance: number;
+  new_balance: number;
+  change: number; // positive for increase, negative for decrease
+  reason: string; // e.g., "tournament_prize", "buy_in", "hand_win", "hand_loss"
 }
 
 export interface ErrorPayload {

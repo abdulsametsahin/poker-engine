@@ -11,14 +11,34 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// BalanceChangeCallback is called when a user's balance changes
+type BalanceChangeCallback func(userID string, oldBalance, newBalance int, reason string)
+
 // Service handles all currency operations
 type Service struct {
-	db *gorm.DB
+	db                     *gorm.DB
+	balanceChangeCallbacks []BalanceChangeCallback
 }
 
 // NewService creates a new currency service
 func NewService(db *gorm.DB) *Service {
-	return &Service{db: db}
+	return &Service{
+		db:                     db,
+		balanceChangeCallbacks: make([]BalanceChangeCallback, 0),
+	}
+}
+
+// AddBalanceChangeCallback adds a callback to be notified of balance changes
+func (s *Service) AddBalanceChangeCallback(callback BalanceChangeCallback) {
+	s.balanceChangeCallbacks = append(s.balanceChangeCallbacks, callback)
+}
+
+// notifyBalanceChange notifies all registered callbacks of a balance change
+func (s *Service) notifyBalanceChange(userID string, oldBalance, newBalance int, reason string) {
+	for _, callback := range s.balanceChangeCallbacks {
+		// Call in goroutine to avoid blocking
+		go callback(userID, oldBalance, newBalance, reason)
+	}
 }
 
 // GetBalance retrieves the current chip balance for a user
@@ -98,6 +118,9 @@ func (s *Service) deductChipsInTx(ctx context.Context, tx *gorm.DB, userID strin
 		return fmt.Errorf("failed to create transaction record: %w", err)
 	}
 
+	// Notify balance change after successful transaction
+	s.notifyBalanceChange(userID, balanceBefore, balanceAfter, description)
+
 	return nil
 }
 
@@ -148,6 +171,9 @@ func (s *Service) addChipsInTx(ctx context.Context, tx *gorm.DB, userID string, 
 	if err := tx.Create(&transaction).Error; err != nil {
 		return fmt.Errorf("failed to create transaction record: %w", err)
 	}
+
+	// Notify balance change after successful transaction
+	s.notifyBalanceChange(userID, balanceBefore, balanceAfter, description)
 
 	return nil
 }

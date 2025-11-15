@@ -11,6 +11,7 @@ import { TableSwitcher } from '../components/game/TableSwitcher';
 import { WinnerDisplay, HandCompleteDisplay, TournamentPausedModal } from '../components/modals';
 import { Button } from '../components/common/Button';
 import { Badge } from '../components/common/Badge';
+import { BalanceAnimation } from '../components/common/BalanceAnimation';
 import { COLORS, RADIUS, GAME } from '../constants';
 import {
   Player,
@@ -60,6 +61,7 @@ export const GameView: React.FC = () => {
   const [tournamentId, setTournamentId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [lastActionSequence, setLastActionSequence] = useState<number>(0);
+  const [balanceChange, setBalanceChange] = useState<number | null>(null);
   const [history, setHistory] = useState<any[]>(() => {
     // Load history from localStorage on mount
     try {
@@ -473,6 +475,27 @@ export const GameView: React.FC = () => {
       });
     };
 
+    const handleBalanceUpdate = (message: WSMessage) => {
+      const payload = message.payload as any;
+      
+      // Only show animation if this is for the current user
+      if (payload.user_id === currentUserId) {
+        setBalanceChange(payload.change);
+        
+        // Clear animation after 2 seconds
+        setTimeout(() => {
+          setBalanceChange(null);
+        }, 2100);
+        
+        // Show toast notification
+        if (payload.change > 0) {
+          showSuccess(`+${payload.change} chips: ${payload.reason}`);
+        } else {
+          showWarning(`${payload.change} chips: ${payload.reason}`);
+        }
+      }
+    };
+
     // Register handlers and store cleanup functions
     const cleanup1 = addMessageHandler('table_state', handleTableState);
     const cleanup2 = addMessageHandler('game_update', handleGameUpdate);
@@ -484,6 +507,7 @@ export const GameView: React.FC = () => {
     const cleanup8 = addMessageHandler('chat_message', handleChatMessage);
     const cleanup9 = addMessageHandler('action_confirmed', handleActionConfirmed);
     const cleanup10 = addMessageHandler('player_action_broadcast', handlePlayerActionBroadcast);
+    const cleanup11 = addMessageHandler('balance_update', handleBalanceUpdate);
 
     return () => {
       cleanup1();
@@ -496,6 +520,7 @@ export const GameView: React.FC = () => {
       cleanup8();
       cleanup9();
       cleanup10();
+      cleanup11();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
 
@@ -1177,9 +1202,16 @@ export const GameView: React.FC = () => {
                     sx={{
                       color: COLORS.text.secondary,
                       fontSize: '11px',
+                      position: 'relative',
                     }}
                   >
                     Your chips: <strong style={{ color: COLORS.primary.light }}>${currentPlayer?.chips || 0}</strong>
+                    {balanceChange !== null && (
+                      <BalanceAnimation 
+                        change={balanceChange}
+                        onComplete={() => setBalanceChange(null)}
+                      />
+                    )}
                   </Typography>
                   <Typography
                     variant="caption"

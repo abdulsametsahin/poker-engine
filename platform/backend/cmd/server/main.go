@@ -75,6 +75,32 @@ func main() {
 	actionRateLimiter = middleware.NewWebSocketActionLimiter()
 	defer actionRateLimiter.Stop()
 
+	// Register balance change callback to broadcast balance updates via websocket
+	appConfig.CurrencyService.AddBalanceChangeCallback(func(userID string, oldBalance, newBalance int, reason string) {
+		change := newBalance - oldBalance
+		
+		// Broadcast balance update to the specific user
+		bridge.Mu.RLock()
+		clientInterface, exists := bridge.Clients[userID]
+		bridge.Mu.RUnlock()
+
+		if exists {
+			if client, ok := clientInterface.(*websocket.Client); ok {
+				websocket.SendToClient(client, websocket.WSMessage{
+					Type: "balance_update",
+					Payload: map[string]interface{}{
+						"user_id":     userID,
+						"old_balance": oldBalance,
+						"new_balance": newBalance,
+						"change":      change,
+						"reason":      reason,
+					},
+				})
+				log.Printf("[BALANCE_UPDATE] User %s: %d → %d (change: %+d) - %s", userID, oldBalance, newBalance, change, reason)
+			}
+		}
+	})
+
 	// Setup tournament callbacks
 	setupTournamentCallbacks()
 
