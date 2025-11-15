@@ -336,25 +336,44 @@ func HandleGetTournamentTables(c *gin.Context, database *db.DB) {
 		return
 	}
 
-	// Get tables from database
-	var tables []models.Table
-	if err := database.DB.Where("tournament_id = ? AND status != ?", tournamentID, "completed").
-		Order("created_at ASC").
-		Find(&tables).Error; err != nil {
+	// Define result structure with player count
+	type TableResult struct {
+		ID             string    `json:"id"`
+		Name           string    `json:"name"`
+		Status         string    `json:"status"`
+		MaxPlayers     int       `json:"max_players"`
+		CurrentPlayers int64     `json:"current_players"`
+		CreatedAt      time.Time `json:"created_at"`
+	}
+
+	var results []TableResult
+
+	// Query tables with player count from table_seats
+	err := database.DB.
+		Table("tables t").
+		Select(`t.id, t.name, t.status, t.max_players, t.created_at,
+			COUNT(DISTINCT ts.user_id) as current_players`).
+		Joins("LEFT JOIN table_seats ts ON t.id = ts.table_id AND ts.left_at IS NULL").
+		Where("t.tournament_id = ? AND t.status != ?", tournamentID, "completed").
+		Group("t.id").
+		Order("t.created_at ASC").
+		Scan(&results).Error
+
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch tournament tables"})
 		return
 	}
 
 	// Format table data for response
-	tableData := make([]map[string]interface{}, 0, len(tables))
-	for _, table := range tables {
+	tableData := make([]map[string]interface{}, 0, len(results))
+	for _, table := range results {
 		tableData = append(tableData, map[string]interface{}{
-			"id":         table.ID,
-			"name":       table.Name,
-			"status":     table.Status,
-			"players":    table.CurrentPlayers,
-			"max_players": table.MaxPlayers,
-			"created_at": table.CreatedAt,
+			"id":              table.ID,
+			"name":            table.Name,
+			"status":          table.Status,
+			"players":         table.CurrentPlayers,
+			"max_players":     table.MaxPlayers,
+			"created_at":      table.CreatedAt,
 		})
 	}
 
