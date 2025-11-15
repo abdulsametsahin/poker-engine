@@ -14,14 +14,9 @@ WORKDIR /app/platform/backend
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 
-# Copy poker-engine module files (from root)
-COPY go.mod go.sum ./
-COPY engine ./engine
-COPY models ./models
-COPY server ./server
-
-# Copy backend application
-COPY platform/backend ./platform/backend
+# Copy only necessary files from root (poker-engine module)
+COPY poker-engine /app/poker-engine
+COPY platform/backend /app/platform/backend
 
 # Build the application with cache mounts
 RUN --mount=type=cache,target=/go/pkg/mod \
