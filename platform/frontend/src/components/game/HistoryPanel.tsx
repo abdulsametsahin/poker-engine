@@ -6,7 +6,7 @@ import { COLORS, RADIUS } from '../../constants';
 // Enhanced history entry to support all event types
 interface HistoryEntry {
   id: string;
-  eventType?: 'player_action' | 'hand_started' | 'round_advanced' | 'hand_complete' | 'showdown';
+  eventType?: 'player_action' | 'hand_started' | 'round_advanced' | 'hand_complete' | 'game_complete' | 'showdown';
   playerName?: string;
   action?: string;
   amount?: number;
@@ -113,6 +113,18 @@ const HistoryEventItem: React.FC<{ entry: HistoryEntry }> = memo(({ entry }) => 
     case 'round_advanced':
       const round = entry.metadata?.new_round || entry.metadata?.round || 'unknown';
       const cards = entry.metadata?.community_cards || [];
+      // Format cards properly - handle both object and string formats
+      const formatCard = (card: any): string => {
+        if (typeof card === 'string') return card;
+        if (typeof card === 'object' && card.rank && card.suit) {
+          return `${card.rank}${card.suit}`;
+        }
+        return '';
+      };
+      const formattedCards = Array.isArray(cards)
+        ? cards.map(formatCard).filter(Boolean).join(' ')
+        : '';
+
       return (
         <Box
           sx={{
@@ -137,7 +149,7 @@ const HistoryEventItem: React.FC<{ entry: HistoryEntry }> = memo(({ entry }) => 
               {round}
             </Typography>
           </Stack>
-          {cards.length > 0 && (
+          {formattedCards && (
             <Typography
               variant="caption"
               sx={{
@@ -146,7 +158,7 @@ const HistoryEventItem: React.FC<{ entry: HistoryEntry }> = memo(({ entry }) => 
                 ml: 2,
               }}
             >
-              {Array.isArray(cards) ? cards.join(' ') : cards}
+              {formattedCards}
             </Typography>
           )}
         </Box>
@@ -211,6 +223,48 @@ const HistoryEventItem: React.FC<{ entry: HistoryEntry }> = memo(({ entry }) => 
               }
             </Typography>
           </Stack>
+        </Box>
+      );
+
+    case 'game_complete':
+      const winnerName = entry.metadata?.winner_name || 'Player';
+      const finalChips = entry.metadata?.final_chips || 0;
+
+      return (
+        <Box
+          sx={{
+            px: 1.5,
+            py: 1,
+            borderRadius: RADIUS.sm,
+            background: `linear-gradient(135deg, ${COLORS.success.main}20 0%, ${COLORS.warning.main}20 100%)`,
+            border: `2px solid ${COLORS.success.main}`,
+          }}
+        >
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            <EmojiEvents sx={{ fontSize: 14, color: COLORS.success.main }} />
+            <Typography
+              variant="caption"
+              sx={{
+                color: COLORS.success.main,
+                fontSize: 11,
+                fontWeight: 800,
+                textTransform: 'uppercase',
+              }}
+            >
+              Game Complete!
+            </Typography>
+          </Stack>
+          <Typography
+            variant="caption"
+            sx={{
+              color: COLORS.text.primary,
+              fontSize: 10,
+              ml: 2,
+              fontWeight: 600,
+            }}
+          >
+            {winnerName} wins with ${finalChips}
+          </Typography>
         </Box>
       );
 

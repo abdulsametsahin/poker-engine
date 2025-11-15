@@ -531,18 +531,29 @@ func (g *Game) completeHand() {
 	}
 
 	// CRITICAL DEADLOCK FIX: Fire event asynchronously
-	if playersWithChips == 1 && lastPlayerStanding != nil && g.onEvent != nil {
-		event := models.Event{
-			Event:   "gameComplete",
-			TableID: g.table.TableID,
-			Data: map[string]interface{}{
-				"winner":       lastPlayerStanding.PlayerID,
-				"winnerName":   lastPlayerStanding.PlayerName,
-				"finalChips":   lastPlayerStanding.Chips,
-				"totalPlayers": len(g.table.Players),
-			},
+	if playersWithChips == 1 && lastPlayerStanding != nil {
+		// Add game complete history entry
+		g.addGameCompleteHistory(
+			lastPlayerStanding.PlayerID,
+			lastPlayerStanding.PlayerName,
+			lastPlayerStanding.Chips,
+			len(g.table.Players),
+		)
+
+		// Fire gameComplete event
+		if g.onEvent != nil {
+			event := models.Event{
+				Event:   "gameComplete",
+				TableID: g.table.TableID,
+				Data: map[string]interface{}{
+					"winner":       lastPlayerStanding.PlayerID,
+					"winnerName":   lastPlayerStanding.PlayerName,
+					"finalChips":   lastPlayerStanding.Chips,
+					"totalPlayers": len(g.table.Players),
+				},
+			}
+			go g.onEvent(event)
 		}
-		go g.onEvent(event)
 	}
 }
 
@@ -941,6 +952,22 @@ func (g *Game) addHandCompleteHistory() {
 		Metadata: map[string]interface{}{
 			"winners": winners,
 			"pot":     g.table.CurrentHand.Pot.Main,
+		},
+	}
+	g.addHistoryEntry(entry)
+}
+
+// addGameCompleteHistory adds a game complete event to the history
+func (g *Game) addGameCompleteHistory(winnerID, winnerName string, finalChips, totalPlayers int) {
+	entry := models.HistoryEntry{
+		ID:        fmt.Sprintf("game_complete-%d", time.Now().UnixNano()),
+		EventType: models.HistoryGameComplete,
+		Timestamp: time.Now(),
+		Metadata: map[string]interface{}{
+			"winner":        winnerID,
+			"winner_name":   winnerName,
+			"final_chips":   finalChips,
+			"total_players": totalPlayers,
 		},
 	}
 	g.addHistoryEntry(entry)

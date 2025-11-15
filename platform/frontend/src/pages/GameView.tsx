@@ -512,7 +512,7 @@ export const GameView: React.FC = () => {
       }
 
       // Convert backend history entries to frontend format
-      const entries = (payload.entries || []).map((entry: any) => ({
+      const newEntries = (payload.entries || []).map((entry: any) => ({
         id: entry.id,
         eventType: entry.event_type,
         playerName: entry.player_name,
@@ -522,7 +522,19 @@ export const GameView: React.FC = () => {
         metadata: entry.metadata,
       }));
 
-      setHistory(entries);
+      // Only append entries we haven't seen before (deduplicate by ID)
+      setHistory(prev => {
+        const existingIds = new Set(prev.map(e => e.id));
+        const uniqueNewEntries = newEntries.filter((e: any) => !existingIds.has(e.id));
+
+        // If no new entries, keep existing history
+        if (uniqueNewEntries.length === 0) {
+          return prev;
+        }
+
+        // Append only new entries
+        return [...prev, ...uniqueNewEntries];
+      });
     };
 
     // Register handlers and store cleanup functions
@@ -781,19 +793,29 @@ export const GameView: React.FC = () => {
           zIndex: 1,
         }}
       >
-        {/* Left side - Poker table */}
+        {/* Left side - Poker table and action buttons */}
         <Box
           sx={{
             flex: 1,
-            p: 3,
-            overflow: 'hidden',
             display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+            flexDirection: 'column',
+            overflow: 'hidden',
             position: 'relative',
           }}
         >
-          <PokerTable tableState={tableState} currentUserId={currentUserId} />
+          {/* Poker table */}
+          <Box
+            sx={{
+              flex: 1,
+              p: 3,
+              overflow: 'hidden',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              position: 'relative',
+            }}
+          >
+            <PokerTable tableState={tableState} currentUserId={currentUserId} />
 
           {/* Paused Overlay - Game on Hold */}
           {tableState?.status === 'paused' && (
@@ -861,67 +883,56 @@ export const GameView: React.FC = () => {
               </Button>
             </Box>
           )}
-        </Box>
+          </Box>
 
-        {/* Right side - Sidebar */}
-        <GameSidebar
-          history={history}
-          messages={chatMessages}
-          currentUserId={currentUserId}
-          onSendMessage={handleSendChatMessage}
-        />
-      </Box>
+          {/* Pending action indicator */}
+          {pendingAction && tableState?.status === 'playing' && (
+            <Box
+              sx={{
+                px: 4,
+                py: 2,
+                background: 'linear-gradient(90deg, rgba(124, 58, 237, 0.2) 0%, rgba(6, 182, 212, 0.2) 100%)',
+                backdropFilter: 'blur(10px)',
+                borderBottom: `1px solid ${COLORS.primary.main}40`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 2,
+                zIndex: 11,
+              }}
+            >
+              <Box
+                sx={{
+                  width: 20,
+                  height: 20,
+                  borderRadius: '50%',
+                  border: `3px solid ${COLORS.primary.main}`,
+                  borderTopColor: 'transparent',
+                  animation: 'spin 1s linear infinite',
+                  '@keyframes spin': {
+                    '0%': { transform: 'rotate(0deg)' },
+                    '100%': { transform: 'rotate(360deg)' },
+                  },
+                }}
+              />
+              <Typography sx={{ color: COLORS.text.primary, fontSize: '14px', fontWeight: 600 }}>
+                Processing {pendingAction.type}...
+              </Typography>
+            </Box>
+          )}
 
-      {/* Pending action indicator */}
-      {pendingAction && tableState?.status === 'playing' && (
-        <Box
-          sx={{
-            px: 4,
-            py: 2,
-            background: 'linear-gradient(90deg, rgba(124, 58, 237, 0.2) 0%, rgba(6, 182, 212, 0.2) 100%)',
-            backdropFilter: 'blur(10px)',
-            borderBottom: `1px solid ${COLORS.primary.main}40`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 2,
-            zIndex: 11,
-            marginRight: '340px', // Account for sidebar width
-          }}
-        >
-          <Box
-            sx={{
-              width: 20,
-              height: 20,
-              borderRadius: '50%',
-              border: `3px solid ${COLORS.primary.main}`,
-              borderTopColor: 'transparent',
-              animation: 'spin 1s linear infinite',
-              '@keyframes spin': {
-                '0%': { transform: 'rotate(0deg)' },
-                '100%': { transform: 'rotate(360deg)' },
-              },
-            }}
-          />
-          <Typography sx={{ color: COLORS.text.primary, fontSize: '14px', fontWeight: 600 }}>
-            Processing {pendingAction.type}...
-          </Typography>
-        </Box>
-      )}
-
-      {/* Action bar - Show when playing (disabled when not player's turn) */}
-      {tableState?.status === 'playing' && currentPlayer && (
-        <Box
-          sx={{
-            px: 4,
-            py: 3,
-            background: 'linear-gradient(180deg, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.95) 100%)',
-            backdropFilter: 'blur(20px)',
-            borderTop: `2px solid ${COLORS.primary.main}40`,
-            position: 'relative',
-            zIndex: 10,
-            boxShadow: '0 -8px 32px rgba(0, 0, 0, 0.5)',
-            marginRight: '340px', // Account for sidebar width
+          {/* Action bar - Show when playing (disabled when not player's turn) */}
+          {tableState?.status === 'playing' && currentPlayer && (
+            <Box
+              sx={{
+                px: 4,
+                py: 3,
+                background: 'linear-gradient(180deg, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.95) 100%)',
+                backdropFilter: 'blur(20px)',
+                borderTop: `2px solid ${COLORS.primary.main}40`,
+                position: 'relative',
+                zIndex: 10,
+                boxShadow: '0 -8px 32px rgba(0, 0, 0, 0.5)',
 
             // Animated glow effect on top border
             '&::before': {
@@ -1300,7 +1311,17 @@ export const GameView: React.FC = () => {
             </Box>
           </Stack>
         </Box>
-      )}
+          )}
+        </Box>
+
+        {/* Right side - Sidebar (100% height) */}
+        <GameSidebar
+          history={history}
+          messages={chatMessages}
+          currentUserId={currentUserId}
+          onSendMessage={handleSendChatMessage}
+        />
+      </Box>
 
       {/* Hand Results Modal - Shows hand winner with showdown */}
       {showHandResults && handResultsData && (

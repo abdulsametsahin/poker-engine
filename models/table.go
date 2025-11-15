@@ -82,6 +82,7 @@ const (
 	HistoryHandStarted   HistoryEventType = "hand_started"
 	HistoryRoundAdvanced HistoryEventType = "round_advanced"
 	HistoryHandComplete  HistoryEventType = "hand_complete"
+	HistoryGameComplete  HistoryEventType = "game_complete"
 	HistoryShowdown      HistoryEventType = "showdown"
 )
 
