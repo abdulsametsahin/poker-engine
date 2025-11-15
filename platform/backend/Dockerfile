@@ -6,22 +6,17 @@ WORKDIR /app
 # Install build dependencies
 RUN apk add --no-cache git
 
-# Copy go mod files first for better layer caching
-COPY platform/backend/go.mod platform/backend/go.sum ./platform/backend/
+# Copy the entire project (since we need the poker-engine from root)
+COPY . .
 
-# Change to backend directory and download dependencies
+# Change to backend directory
 WORKDIR /app/platform/backend
-RUN --mount=type=cache,target=/go/pkg/mod \
-    go mod download
 
-# Copy only necessary files from root (poker-engine module)
-COPY poker-engine /app/poker-engine
-COPY platform/backend /app/platform/backend
+# Download dependencies
+RUN go mod download
 
-# Build the application with cache mounts
-RUN --mount=type=cache,target=/go/pkg/mod \
-    --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags="-w -s" -o poker-server ./cmd/server
+# Build the application
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o poker-server ./cmd/server
 
 # Runtime stage
 FROM alpine:latest
