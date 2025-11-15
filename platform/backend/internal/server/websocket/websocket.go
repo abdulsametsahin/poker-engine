@@ -352,6 +352,23 @@ func BroadcastTableState(
 			default:
 				close(client.Send)
 			}
+
+			// Send history log message separately
+			if len(state.History) > 0 {
+				historyMsg := WSMessage{
+					Type: "history_log",
+					Payload: map[string]interface{}{
+						"table_id": tableID,
+						"entries":  state.History,
+					},
+				}
+				historyData, _ := json.Marshal(historyMsg)
+				select {
+				case client.Send <- historyData:
+				default:
+					close(client.Send)
+				}
+			}
 		}
 	}
 }
