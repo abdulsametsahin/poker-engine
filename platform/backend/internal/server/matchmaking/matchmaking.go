@@ -313,7 +313,9 @@ func ProcessMatchmaking(
 	// Start the game after countdown completes
 	countdownDuration := getMatchmakingCountdown()
 	go func() {
-		time.Sleep(countdownDuration)
+		// Add a small buffer (200ms) to ensure enough time has passed
+		// This prevents race conditions where the goroutine wakes up slightly early
+		time.Sleep(countdownDuration + 200*time.Millisecond)
 		log.Printf("Starting game for table %s after %.0f second countdown", tableID, countdownDuration.Seconds())
 		checkStartFunc(tableID)
 	}()
