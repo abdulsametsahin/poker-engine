@@ -22,7 +22,7 @@ import (
 )
 
 // HandleCreateTournament creates a new tournament
-func HandleCreateTournament(c *gin.Context, tournamentService *tournament.Service) {
+func HandleCreateTournament(c *gin.Context, tournamentService *tournament.Service, bridge *game.GameBridge) {
 	userID := c.GetString("user_id")
 
 	var req models.CreateTournamentRequest
@@ -68,6 +68,9 @@ func HandleCreateTournament(c *gin.Context, tournamentService *tournament.Servic
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	// Broadcast tournament creation to all clients
+	go BroadcastTournamentCreated(tourney.ID, tournamentService, bridge)
 
 	c.JSON(http.StatusCreated, tourney)
 }
@@ -321,6 +324,41 @@ func HandleGetTournamentStandings(c *gin.Context, eliminationTracker *tournament
 	}
 
 	c.JSON(http.StatusOK, gin.H{"standings": standings})
+}
+
+// HandleGetTournamentTables gets all tables for a tournament
+func HandleGetTournamentTables(c *gin.Context, database *db.DB) {
+	tournamentID := c.Param("id")
+
+	// CRITICAL: Validate tournament ID format
+	if err := validation.ValidateUUID(tournamentID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid tournament ID"})
+		return
+	}
+
+	// Get tables from database
+	var tables []models.Table
+	if err := database.DB.Where("tournament_id = ? AND status != ?", tournamentID, "completed").
+		Order("created_at ASC").
+		Find(&tables).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch tournament tables"})
+		return
+	}
+
+	// Format table data for response
+	tableData := make([]map[string]interface{}, 0, len(tables))
+	for _, table := range tables {
+		tableData = append(tableData, map[string]interface{}{
+			"id":         table.ID,
+			"name":       table.Name,
+			"status":     table.Status,
+			"players":    table.CurrentPlayers,
+			"max_players": table.MaxPlayers,
+			"created_at": table.CreatedAt,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"tables": tableData})
 }
 
 // InitializeTournamentTables initializes all tables for a tournament using distributed locks

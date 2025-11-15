@@ -324,6 +324,13 @@ func BroadcastTableState(
 				"action_sequence": actionSequence,
 			}
 
+			// Add dealer and blind positions if hand is active
+			if state.CurrentHand != nil {
+				payload["dealer_position"] = state.CurrentHand.DealerPosition
+				payload["small_blind_position"] = state.CurrentHand.SmallBlindPosition
+				payload["big_blind_position"] = state.CurrentHand.BigBlindPosition
+			}
+
 			// Add action deadline if there's an active player
 			if state.CurrentHand != nil && state.CurrentHand.ActionDeadline != nil && !state.CurrentHand.ActionDeadline.IsZero() {
 				payload["action_deadline"] = state.CurrentHand.ActionDeadline.Format(time.RFC3339)

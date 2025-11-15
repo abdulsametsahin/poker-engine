@@ -229,11 +229,13 @@ export const Tournaments: React.FC = () => {
       const response = await tournamentAPI.createTournament(formData);
       showSuccess('Tournament created successfully!');
       setCreateDialogOpen(false);
-      fetchTournaments();
 
-      // Show the tournament code (backend returns tournament directly)
+      // Get the tournament from the response
       const tournament = response.data;
       showSuccess(`Tournament Code: ${tournament.tournament_code} - Share this code with players!`);
+
+      // Redirect to tournament details page
+      navigate(`/tournaments/${tournament.id}`);
     } catch (error: any) {
       showError(error.response?.data?.error || 'Failed to create tournament');
     } finally {

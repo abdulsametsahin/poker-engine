@@ -860,6 +860,44 @@ func HandleTableConsolidation(
 	log.Printf("Tournament %s: Tables consolidated", tournamentID)
 }
 
+// BroadcastTournamentCreated broadcasts tournament creation
+func BroadcastTournamentCreated(
+	tournamentID string,
+	tournamentService *tournament.Service,
+	bridge *game.GameBridge,
+) {
+	tourney, err := tournamentService.GetTournament(tournamentID)
+	if err != nil {
+		return
+	}
+
+	message := map[string]interface{}{
+		"type": "tournament_created",
+		"payload": map[string]interface{}{
+			"tournament_id": tournamentID,
+			"tournament":    tourney,
+		},
+	}
+
+	data, _ := json.Marshal(message)
+
+	// Broadcast to all clients
+	bridge.Mu.RLock()
+	defer bridge.Mu.RUnlock()
+
+	for _, clientInterface := range bridge.Clients {
+		type Sender interface {
+			GetSendChannel() chan []byte
+		}
+		if sender, ok := clientInterface.(Sender); ok {
+			select {
+			case sender.GetSendChannel() <- data:
+			default:
+			}
+		}
+	}
+}
+
 // BroadcastTournamentStarted broadcasts tournament start
 func BroadcastTournamentStarted(
 	tournamentID string,

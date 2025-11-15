@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Box, Stack, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Typography } from '@mui/material';
+import { Box, Stack, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Typography, Slider } from '@mui/material';
 import { ArrowBack, ExitToApp, Pause, EmojiEvents, Home } from '@mui/icons-material';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useWebSocket } from '../contexts/WebSocketContext';
@@ -37,6 +37,9 @@ interface TableState {
   winners?: any[];
   is_tournament?: boolean;
   action_sequence?: number;
+  dealer_position?: number;
+  small_blind_position?: number;
+  big_blind_position?: number;
 }
 
 interface PendingAction {
@@ -179,6 +182,9 @@ export const GameView: React.FC = () => {
         winners: message.payload.winners,
         is_tournament: message.payload.is_tournament,
         action_sequence: message.payload.action_sequence || 0,
+        dealer_position: message.payload.dealer_position,
+        small_blind_position: message.payload.small_blind_position,
+        big_blind_position: message.payload.big_blind_position,
       };
 
       // Check if action sequence advanced (action was confirmed)
@@ -864,8 +870,8 @@ export const GameView: React.FC = () => {
         </Box>
       )}
 
-      {/* Action bar - Only show when playing and it's my turn */}
-      {tableState?.status === 'playing' && isMyTurn && (
+      {/* Action bar - Show when playing (disabled when not player's turn) */}
+      {tableState?.status === 'playing' && currentPlayer && (
         <Box
           sx={{
             px: 4,
@@ -907,7 +913,7 @@ export const GameView: React.FC = () => {
               <Button
                 variant="danger"
                 onClick={() => handleAction('fold')}
-                disabled={!!pendingAction}
+                disabled={!isMyTurn || !!pendingAction}
                 sx={{
                   minWidth: 120,
                   height: 48,
@@ -934,7 +940,7 @@ export const GameView: React.FC = () => {
                 <Button
                   variant="secondary"
                   onClick={() => handleAction('check')}
-                  disabled={!!pendingAction}
+                  disabled={!isMyTurn || !!pendingAction}
                   sx={{
                     minWidth: 120,
                     height: 48,
@@ -957,7 +963,7 @@ export const GameView: React.FC = () => {
                 <Button
                   variant="success"
                   onClick={() => handleAction('call')}
-                  disabled={!!pendingAction}
+                  disabled={!isMyTurn || !!pendingAction}
                   sx={{
                     minWidth: 140,
                     height: 48,
@@ -998,7 +1004,7 @@ export const GameView: React.FC = () => {
               <Button
                 variant="warning"
                 onClick={() => handleAction('allin')}
-                disabled={!!pendingAction}
+                disabled={!isMyTurn || !!pendingAction}
                 sx={{
                   minWidth: 140,
                   height: 48,
@@ -1068,60 +1074,84 @@ export const GameView: React.FC = () => {
             >
               <Stack spacing={2}>
                 {/* Raise amount display and slider */}
-                <Stack direction="row" spacing={3} alignItems="center">
-                  <Typography
-                    sx={{
-                      color: COLORS.text.secondary,
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      minWidth: 80,
-                    }}
-                  >
-                    RAISE TO
-                  </Typography>
-
-                  {/* Custom amount input */}
-                  <Box
-                    sx={{
-                      px: 2,
-                      py: 1,
-                      borderRadius: RADIUS.md,
-                      background: 'rgba(0, 0, 0, 0.5)',
-                      border: `1px solid ${COLORS.primary.main}40`,
-                      display: 'flex',
-                      alignItems: 'center',
-                      minWidth: 140,
-                    }}
-                  >
+                <Stack spacing={1.5}>
+                  <Stack direction="row" spacing={2} alignItems="center" justifyContent="space-between">
                     <Typography
                       sx={{
                         color: COLORS.text.secondary,
-                        fontSize: '16px',
-                        mr: 1,
+                        fontSize: '13px',
+                        fontWeight: 600,
                       }}
                     >
-                      $
+                      RAISE TO
                     </Typography>
-                    <input
-                      type="number"
-                      value={raiseAmount}
-                      onChange={(e) => setRaiseAmount(Number(e.target.value))}
-                      min={minRaiseAmount}
-                      max={maxRaiseAmount}
-                      step={10}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        outline: 'none',
-                        color: COLORS.text.primary,
-                        fontSize: '20px',
-                        fontWeight: 700,
-                        width: '100%',
-                        fontFamily: 'inherit',
-                      }}
-                    />
-                  </Box>
 
+                    {/* Amount display */}
+                    <Box
+                      sx={{
+                        px: 2,
+                        py: 0.75,
+                        borderRadius: RADIUS.md,
+                        background: 'rgba(0, 0, 0, 0.5)',
+                        border: `1px solid ${COLORS.primary.main}40`,
+                        display: 'flex',
+                        alignItems: 'center',
+                        minWidth: 100,
+                      }}
+                    >
+                      <Typography
+                        sx={{
+                          color: COLORS.primary.light,
+                          fontSize: '18px',
+                          fontWeight: 700,
+                          fontFamily: 'monospace',
+                        }}
+                      >
+                        ${raiseAmount}
+                      </Typography>
+                    </Box>
+                  </Stack>
+
+                  {/* Slider */}
+                  <Slider
+                    value={raiseAmount}
+                    onChange={(_, value) => setRaiseAmount(value as number)}
+                    disabled={!isMyTurn}
+                    min={minRaiseAmount}
+                    max={maxRaiseAmount}
+                    step={Math.max(10, Math.floor((maxRaiseAmount - minRaiseAmount) / 100))}
+                    sx={{
+                      color: COLORS.primary.main,
+                      height: 6,
+                      '& .MuiSlider-thumb': {
+                        width: 20,
+                        height: 20,
+                        backgroundColor: COLORS.primary.main,
+                        border: `2px solid ${COLORS.background.primary}`,
+                        boxShadow: `0 0 12px ${COLORS.primary.glow}`,
+                        '&:hover, &.Mui-focusVisible': {
+                          boxShadow: `0 0 16px ${COLORS.primary.glow}`,
+                        },
+                      },
+                      '& .MuiSlider-track': {
+                        background: `linear-gradient(90deg, ${COLORS.primary.main}, ${COLORS.primary.light})`,
+                        border: 'none',
+                      },
+                      '& .MuiSlider-rail': {
+                        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                      },
+                      '&.Mui-disabled': {
+                        color: 'rgba(255, 255, 255, 0.3)',
+                        '& .MuiSlider-thumb': {
+                          backgroundColor: 'rgba(255, 255, 255, 0.3)',
+                        },
+                      },
+                    }}
+                  />
+                </Stack>
+
+                {/* Quick bet buttons and Raise button */}
+                <Stack direction="row" spacing={2} alignItems="center">
                   {/* Quick bet buttons */}
                   <Stack direction="row" spacing={1} flex={1}>
                     {[
@@ -1134,6 +1164,7 @@ export const GameView: React.FC = () => {
                         key={bet.label}
                         variant="ghost"
                         onClick={() => setRaiseAmount(bet.value)}
+                        disabled={!isMyTurn}
                         sx={{
                           minWidth: 0,
                           height: 36,
@@ -1161,7 +1192,7 @@ export const GameView: React.FC = () => {
                   <Button
                     variant="primary"
                     onClick={() => handleAction('raise', raiseAmount)}
-                    disabled={!!pendingAction || raiseAmount < minRaiseAmount || raiseAmount > maxRaiseAmount}
+                    disabled={!isMyTurn || !!pendingAction || raiseAmount < minRaiseAmount || raiseAmount > maxRaiseAmount}
                     sx={{
                       minWidth: 120,
                       height: 48,
