@@ -3,7 +3,6 @@ package events
 import (
 	"encoding/json"
 	"log"
-	"sync"
 	"time"
 
 	"poker-platform/backend/internal/db"
@@ -445,7 +444,7 @@ func BroadcastPlayerAction(
 	action string,
 	amount int,
 	bettingRound string,
-	state *pokerModels.TableState,
+	state *pokerModels.Table,
 ) {
 	// Get player name
 	playerName := ""
