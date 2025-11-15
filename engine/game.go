@@ -252,6 +252,8 @@ func (g *Game) ProcessAction(playerID string, action models.PlayerAction, amount
 	g.table.CurrentHand.ActionSequence++
 	g.table.CurrentHand.LastActionPlayerID = playerID
 	g.table.CurrentHand.LastActionTime = time.Now()
+	g.table.CurrentHand.HasRealActionThisRound = true // Mark that a real (non-timeout) action occurred this round
+	g.table.CurrentHand.HasRealActionThisHand = true  // Mark that a real (non-timeout) action occurred this hand
 
 	// CRITICAL DEADLOCK FIX: Fire event asynchronously to prevent deadlock
 	// If event handler tries to call ProcessAction, it would deadlock waiting for mutex
@@ -319,6 +321,26 @@ func (g *Game) advanceToNextRound() {
 	currentRound := g.table.CurrentHand.BettingRound
 
 	log.Printf("[ROUND_ADVANCE] Advancing from %s, last actor: %s", currentRound, lastActor)
+
+	// Check if this round had only timeout actions (no real player actions)
+	if !g.table.CurrentHand.HasRealActionThisRound {
+		g.table.CurrentHand.ConsecutiveAllTimeoutRounds++
+		log.Printf("[INACTIVITY_CHECK] Round %s had only timeouts. Consecutive timeout rounds: %d",
+			currentRound, g.table.CurrentHand.ConsecutiveAllTimeoutRounds)
+
+		// If 2+ consecutive rounds with all timeouts, consider game abandoned
+		if g.table.CurrentHand.ConsecutiveAllTimeoutRounds >= 2 {
+			log.Printf("[GAME_ABANDONED] Terminating game due to player inactivity")
+			g.terminateAbandonedGame()
+			return
+		}
+	} else {
+		// Reset counter if there was a real action this round
+		g.table.CurrentHand.ConsecutiveAllTimeoutRounds = 0
+	}
+
+	// Reset flag for next round
+	g.table.CurrentHand.HasRealActionThisRound = false
 
 	// Only recalculate pot if there were bets in this round
 	hasBets := false
@@ -434,6 +456,25 @@ func (g *Game) completeHand() {
 		g.potCalculator = NewPotCalculator()
 	}
 
+	// Check if entire hand had only timeout actions (no real player actions)
+	hadOnlyTimeouts := !g.table.CurrentHand.HasRealActionThisHand
+	if hadOnlyTimeouts {
+		g.table.ConsecutiveAllTimeoutHands++
+		log.Printf("[INACTIVITY_CHECK] Hand completed with only timeouts. Consecutive timeout hands: %d",
+			g.table.ConsecutiveAllTimeoutHands)
+
+		// If 2+ consecutive hands with all timeouts, abandon the game
+		if g.table.ConsecutiveAllTimeoutHands >= 2 {
+			log.Printf("[GAME_ABANDONED] Terminating game due to %d consecutive hands with player inactivity",
+				g.table.ConsecutiveAllTimeoutHands)
+			g.terminateAbandonedGame()
+			return
+		}
+	} else {
+		// Reset counter if there was a real action this hand
+		g.table.ConsecutiveAllTimeoutHands = 0
+	}
+
 	hasBets := false
 	for _, p := range g.table.Players {
 		if p != nil && p.Bet > 0 {
@@ -491,6 +532,33 @@ func (g *Game) completeHand() {
 		}
 		go g.onEvent(event)
 	}
+}
+
+// terminateAbandonedGame terminates the game when all players are inactive
+func (g *Game) terminateAbandonedGame() {
+	// Stop any active timers
+	g.stopActionTimer()
+
+	// Set table status to completed
+	g.table.Status = models.StatusCompleted
+
+	// Clear current hand
+	g.table.CurrentHand = nil
+
+	// Fire gameAbandoned event
+	if g.onEvent != nil {
+		event := models.Event{
+			Event:   "gameAbandoned",
+			TableID: g.table.TableID,
+			Data: map[string]interface{}{
+				"reason":       "player_inactivity",
+				"totalPlayers": len(g.table.Players),
+			},
+		}
+		go g.onEvent(event)
+	}
+
+	log.Printf("[GAME_TERMINATED] Game %s abandoned due to all players being inactive", g.table.TableID)
 }
 
 func (g *Game) isBettingRoundComplete() bool {

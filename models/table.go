@@ -48,20 +48,23 @@ type SidePot struct {
 }
 
 type CurrentHand struct {
-	HandNumber         int          `json:"handNumber"`
-	DealerPosition     int          `json:"dealerPosition"`
-	SmallBlindPosition int          `json:"smallBlindPosition"`
-	BigBlindPosition   int          `json:"bigBlindPosition"`
-	CurrentPosition    int          `json:"currentPosition"`
-	BettingRound       BettingRound `json:"bettingRound"`
-	CommunityCards     []Card       `json:"communityCards"`
-	Pot                Pot          `json:"pot"`
-	CurrentBet         int          `json:"currentBet"`
-	MinRaise           int          `json:"minRaise"`
-	ActionDeadline     *time.Time   `json:"actionDeadline,omitempty"`
-	ActionSequence     uint64       `json:"actionSequence"`
-	LastActionPlayerID string       `json:"lastActionPlayerId,omitempty"`
-	LastActionTime     time.Time    `json:"lastActionTime,omitempty"`
+	HandNumber                 int          `json:"handNumber"`
+	DealerPosition             int          `json:"dealerPosition"`
+	SmallBlindPosition         int          `json:"smallBlindPosition"`
+	BigBlindPosition           int          `json:"bigBlindPosition"`
+	CurrentPosition            int          `json:"currentPosition"`
+	BettingRound               BettingRound `json:"bettingRound"`
+	CommunityCards             []Card       `json:"communityCards"`
+	Pot                        Pot          `json:"pot"`
+	CurrentBet                 int          `json:"currentBet"`
+	MinRaise                   int          `json:"minRaise"`
+	ActionDeadline             *time.Time   `json:"actionDeadline,omitempty"`
+	ActionSequence             uint64       `json:"actionSequence"`
+	LastActionPlayerID         string       `json:"lastActionPlayerId,omitempty"`
+	LastActionTime             time.Time    `json:"lastActionTime,omitempty"`
+	HasRealActionThisRound     bool         `json:"-"` // Tracks if any non-timeout action occurred this round
+	HasRealActionThisHand      bool         `json:"-"` // Tracks if any non-timeout action occurred this entire hand
+	ConsecutiveAllTimeoutRounds int         `json:"-"` // Counts consecutive rounds where all actions were timeouts
 }
 
 type Winner struct {
@@ -73,13 +76,14 @@ type Winner struct {
 }
 
 type Table struct {
-	TableID     string        `json:"tableId"`
-	GameType    GameType      `json:"gameType"`
-	Status      TableStatus   `json:"status"`
-	Config      TableConfig   `json:"config"`
-	CurrentHand *CurrentHand  `json:"currentHand,omitempty"`
-	Players     []*Player     `json:"players"`
-	Winners     []Winner      `json:"winners,omitempty"`
-	Deck        *Deck         `json:"-"`
-	CreatedAt   time.Time     `json:"createdAt"`
+	TableID                    string        `json:"tableId"`
+	GameType                   GameType      `json:"gameType"`
+	Status                     TableStatus   `json:"status"`
+	Config                     TableConfig   `json:"config"`
+	CurrentHand                *CurrentHand  `json:"currentHand,omitempty"`
+	Players                    []*Player     `json:"players"`
+	Winners                    []Winner      `json:"winners,omitempty"`
+	Deck                       *Deck         `json:"-"`
+	CreatedAt                  time.Time     `json:"createdAt"`
+	ConsecutiveAllTimeoutHands int           `json:"-"` // Tracks consecutive hands where all actions were timeouts
 }
