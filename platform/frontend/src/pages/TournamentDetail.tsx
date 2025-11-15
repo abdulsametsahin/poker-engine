@@ -277,6 +277,11 @@ export const TournamentDetail: React.FC = () => {
         })));
       }
 
+      // Refetch tournament data to get updated prize amounts after distribution
+      setTimeout(() => {
+        fetchTournamentData();
+      }, 1000);
+
       showSuccess(`Tournament complete! Winner: ${message.payload.winner_name}`);
       console.log('[TournamentDetail] Tournament completed');
     };
@@ -767,6 +772,35 @@ export const TournamentDetail: React.FC = () => {
                 <Typography variant="h6" fontWeight="bold" mb={2}>
                   {tournament.status === 'completed' ? 'Final Standings' : 'Current Standings'}
                 </Typography>
+                
+                {/* Winner Display for Completed Tournaments */}
+                {tournament.status === 'completed' && standings.length > 0 && standings[0]?.position === 1 && (
+                  <Box
+                    sx={{
+                      mb: 3,
+                      p: 3,
+                      borderRadius: 2,
+                      background: `linear-gradient(135deg, ${COLORS.warning.main}15 0%, ${COLORS.success.main}15 100%)`,
+                      border: `2px solid ${COLORS.warning.main}`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 2,
+                    }}
+                  >
+                    <EmojiEvents sx={{ fontSize: 48, color: COLORS.warning.main }} />
+                    <Box flex={1}>
+                      <Typography variant="h5" fontWeight="bold" sx={{ color: COLORS.text.primary }}>
+                        🏆 Tournament Winner: {standings[0].username || players.find(p => p.user_id === standings[0].user_id)?.username || 'Unknown'}
+                      </Typography>
+                      {standings[0].prize_amount > 0 && (
+                        <Typography variant="h6" sx={{ color: COLORS.success.main, fontWeight: 'bold', mt: 1 }}>
+                          Prize: +{standings[0].prize_amount.toLocaleString()} chips
+                        </Typography>
+                      )}
+                    </Box>
+                  </Box>
+                )}
+
                 <TableContainer>
                   <Table>
                     <TableHead>
@@ -784,7 +818,15 @@ export const TournamentDetail: React.FC = () => {
                         .map((standing) => {
                           const player = players.find(p => p.user_id === standing.user_id);
                           return (
-                            <TableRow key={standing.user_id}>
+                            <TableRow 
+                              key={standing.user_id}
+                              sx={{
+                                ...(standing.position === 1 && tournament.status === 'completed' && {
+                                  backgroundColor: `${COLORS.warning.main}10`,
+                                  borderLeft: `3px solid ${COLORS.warning.main}`,
+                                }),
+                              }}
+                            >
                               <TableCell>
                                 {standing.position ? (
                                   <Chip
@@ -814,10 +856,22 @@ export const TournamentDetail: React.FC = () => {
                                 </TableCell>
                               )}
                               <TableCell>
-                                {standing.position ? (
-                                  <Chip label="Eliminated" size="small" color="error" />
+                                {tournament.status === 'completed' ? (
+                                  // For completed tournaments, distinguish winner from eliminated
+                                  standing.position === 1 ? (
+                                    <Chip label="Winner" size="small" color="success" sx={{ fontWeight: 'bold' }} />
+                                  ) : standing.position ? (
+                                    <Chip label="Eliminated" size="small" color="error" />
+                                  ) : (
+                                    <Chip label="Active" size="small" color="success" />
+                                  )
                                 ) : (
-                                  <Chip label="Active" size="small" color="success" />
+                                  // For in-progress tournaments
+                                  standing.position ? (
+                                    <Chip label="Eliminated" size="small" color="error" />
+                                  ) : (
+                                    <Chip label="Active" size="small" color="success" />
+                                  )
                                 )}
                               </TableCell>
                             </TableRow>
