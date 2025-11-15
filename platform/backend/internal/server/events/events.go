@@ -3,6 +3,7 @@ package events
 import (
 	"encoding/json"
 	"log"
+	"sync"
 	"time"
 
 	"poker-platform/backend/internal/db"
@@ -395,7 +396,109 @@ func ProcessGameAction(
 		} else {
 			log.Printf("[ACTION] WARNING: No hand ID found for table %s to save action", tableID)
 		}
+
+		// Send action confirmation to the player who acted
+		SendActionConfirmation(bridge, userID, action, amount, true)
+
+		// Broadcast action to all players at the table for history updates
+		BroadcastPlayerAction(bridge, tableID, userID, action, amount, bettingRound, state)
 	}
+}
+
+// SendActionConfirmation sends an action_confirmed message to a specific player
+func SendActionConfirmation(bridge *game.GameBridge, userID string, action string, amount int, success bool) {
+	confirmMsg := map[string]interface{}{
+		"type": "action_confirmed",
+		"payload": map[string]interface{}{
+			"user_id": userID,
+			"action":  action,
+			"amount":  amount,
+			"success": success,
+		},
+	}
+
+	msgData, _ := json.Marshal(confirmMsg)
+
+	bridge.Mu.RLock()
+	defer bridge.Mu.RUnlock()
+
+	if clientInterface, exists := bridge.Clients[userID]; exists {
+		type ClientWithSend interface {
+			GetSendChannel() chan []byte
+		}
+		if client, ok := clientInterface.(ClientWithSend); ok {
+			select {
+			case client.GetSendChannel() <- msgData:
+				log.Printf("[ACTION_CONFIRM] Sent confirmation to user %s for action %s", userID, action)
+			default:
+				log.Printf("[ACTION_CONFIRM] WARNING: Send channel full for user %s", userID)
+			}
+		}
+	}
+}
+
+// BroadcastPlayerAction broadcasts a player_action_broadcast message to all players at a table
+func BroadcastPlayerAction(
+	bridge *game.GameBridge,
+	tableID string,
+	userID string,
+	action string,
+	amount int,
+	bettingRound string,
+	state *pokerModels.TableState,
+) {
+	// Get player name
+	playerName := ""
+	for _, p := range state.Players {
+		if p != nil && p.PlayerID == userID {
+			playerName = p.PlayerName
+			break
+		}
+	}
+
+	// Calculate pot
+	pot := 0
+	if state.CurrentHand != nil {
+		pot = state.CurrentHand.Pot.Main + game.SumSidePots(state.CurrentHand.Pot.Side)
+	}
+
+	actionMsg := map[string]interface{}{
+		"type": "player_action_broadcast",
+		"payload": map[string]interface{}{
+			"user_id":       userID,
+			"player_name":   playerName,
+			"action":        action,
+			"amount":        amount,
+			"betting_round": bettingRound,
+			"pot_after":     pot,
+			"timestamp":     time.Now().Unix(),
+		},
+	}
+
+	msgData, _ := json.Marshal(actionMsg)
+
+	bridge.Mu.RLock()
+	defer bridge.Mu.RUnlock()
+
+	sentCount := 0
+	for _, clientInterface := range bridge.Clients {
+		type ClientWithTable interface {
+			GetTableID() string
+			GetSendChannel() chan []byte
+		}
+		if client, ok := clientInterface.(ClientWithTable); ok {
+			if client.GetTableID() == tableID {
+				select {
+				case client.GetSendChannel() <- msgData:
+					sentCount++
+				default:
+					// Channel full, skip
+				}
+			}
+		}
+	}
+
+	log.Printf("[ACTION_BROADCAST] Sent player_action_broadcast to %d clients for table %s", sentCount, tableID)
 }
 
 // SendGameCompleteMessage sends a game complete message to all clients at a table
