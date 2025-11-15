@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Box, Stack, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Typography, Slider } from '@mui/material';
+import { Box, Stack, IconButton, Typography, Slider } from '@mui/material';
 import { ArrowBack, ExitToApp, Pause, EmojiEvents, Home } from '@mui/icons-material';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useWebSocket } from '../contexts/WebSocketContext';
@@ -8,7 +8,10 @@ import { useToast } from '../contexts/ToastContext';
 import { PokerTable } from '../components/game/PokerTable';
 import { GameSidebar } from '../components/game/GameSidebar';
 import { TableSwitcher } from '../components/game/TableSwitcher';
-import { WinnerDisplay, HandCompleteDisplay, TournamentPausedModal } from '../components/modals';
+import { TournamentPausedModal } from '../components/modals';
+import HandResultsModal from '../components/modals/HandResultsModal';
+import TableEliminatedModal from '../components/modals/TableEliminatedModal';
+import GameCompleteModal from '../components/modals/GameCompleteModal';
 import { Button } from '../components/common/Button';
 import { Badge } from '../components/common/Badge';
 import { BalanceAnimation } from '../components/common/BalanceAnimation';
@@ -58,8 +61,10 @@ export const GameView: React.FC = () => {
 
   const [tableState, setTableState] = useState<TableState | null>(null);
   const [raiseAmount, setRaiseAmount] = useState(0);
-  const [showHandComplete, setShowHandComplete] = useState(false);
+  const [showHandResults, setShowHandResults] = useState(false);
+  const [showTableEliminated, setShowTableEliminated] = useState(false);
   const [showGameComplete, setShowGameComplete] = useState(false);
+  const [handResultsData, setHandResultsData] = useState<any>(null);
   const [gameMode, setGameMode] = useState<string>('heads_up');
   const [tournamentId, setTournamentId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
@@ -254,8 +259,10 @@ export const GameView: React.FC = () => {
         (tableState?.status === 'handComplete' && newState.status === 'waiting') ||
         (tableState?.status === 'handComplete' && newState.status === 'playing' && !newState.winners)
       ) {
-        setShowHandComplete(false);
+        setShowHandResults(false);
         setShowGameComplete(false);
+        setShowTableEliminated(false);
+        setHandResultsData(null);
         // Don't clear history - keep it persistent across hands
       }
 
@@ -323,14 +330,13 @@ export const GameView: React.FC = () => {
 
       setTableState(newState);
 
-      // Show hand complete display when hand is complete (not game complete)
+      // Show hand results when hand is complete
       if (newState.status === 'handComplete' && newState.winners && newState.winners.length > 0) {
-        const winnersStr = newState.winners.map((w: any) =>
-          `${w.playerName} (${w.handRank}) - ${w.amount} chips`
-        ).join(', ');
-        const communityCards = newState.community_cards || [];
-        const cardsStr = communityCards.length > 0 ? ` - Board: ${communityCards.join(' ')}` : '';
-        setShowHandComplete(true);
+        setHandResultsData({
+          winners: newState.winners,
+          pot: newState.pot,
+        });
+        setShowHandResults(true);
 
         // Add hand_complete event to history with deduplication
         setHistory(prev => {
@@ -364,10 +370,27 @@ export const GameView: React.FC = () => {
     };
 
     const handleGameComplete = (message: WSMessage) => {
-      // Show game complete modal (different from hand complete)
-      showSuccess('Game complete!');
-      setShowHandComplete(false); // Hide hand complete if showing
-      setShowGameComplete(true);
+      // Update table state first
+      if (message.payload) {
+        handleTableState(message);
+      }
+
+      const isTournament = tableState?.is_tournament || message.payload?.is_tournament;
+
+      // Show hand results first (5 seconds), then show appropriate completion modal
+      setTimeout(() => {
+        setShowHandResults(false);
+
+        if (isTournament) {
+          // For tournament: show table eliminated modal with standings
+          setShowTableEliminated(true);
+          showSuccess('Table complete!');
+        } else {
+          // For cash game: show game complete modal with profit/loss
+          setShowGameComplete(true);
+          showSuccess('Game complete!');
+        }
+      }, 5000); // Show hand results for 5 seconds first
 
       // Clear history from localStorage when game ends
       if (tableId) {
@@ -376,11 +399,6 @@ export const GameView: React.FC = () => {
         } catch (error) {
           console.error('Failed to clear history from localStorage:', error);
         }
-      }
-
-      // Update table state with game complete info
-      if (message.payload) {
-        handleTableState(message);
       }
     };
 
@@ -618,6 +636,19 @@ export const GameView: React.FC = () => {
   const handleReturnToLobby = useCallback(() => {
     navigate('/lobby');
   }, [navigate]);
+
+  const handleReturnToTournament = useCallback(() => {
+    if (tournamentId) {
+      navigate(`/tournaments/${tournamentId}`);
+    } else {
+      navigate('/tournaments');
+    }
+  }, [navigate, tournamentId]);
+
+  const handleHandResultsClose = useCallback(() => {
+    setShowHandResults(false);
+    setHandResultsData(null);
+  }, []);
 
   return (
     <Box
@@ -1262,24 +1293,46 @@ export const GameView: React.FC = () => {
         </Box>
       )}
 
-      {/* Hand Complete Display - Side panel with auto-hide */}
-      {showHandComplete && tableState?.winners && tableState.winners.length > 0 && !showGameComplete && (
-        <HandCompleteDisplay
-          winners={tableState.winners}
-          pot={tableState.pot}
+      {/* Hand Results Modal - Shows hand winner with showdown */}
+      {showHandResults && handResultsData && (
+        <HandResultsModal
+          winners={handResultsData.winners}
+          pot={handResultsData.pot}
           currentUserId={currentUserId}
-          onClose={() => setShowHandComplete(false)}
+          duration={5000}
+          show={showHandResults}
+          onClose={handleHandResultsClose}
         />
       )}
 
-      {/* Game Complete Display - Full modal */}
-      {showGameComplete && tableState?.winners && tableState.winners.length > 0 && (
-        <WinnerDisplay
-          winners={tableState.winners}
-          pot={tableState.pot}
-          gameComplete={true}
-          gameMode={gameMode}
-          onClose={() => setShowGameComplete(false)}
+      {/* Table Eliminated Modal - For tournament table completion */}
+      {showTableEliminated && tableState?.players && (
+        <TableEliminatedModal
+          show={showTableEliminated}
+          isEliminated={tableState.players.find((p: any) => p.user_id === currentUserId)?.chips === 0}
+          tableStandings={tableState.players.map((p: any, idx: number) => ({
+            playerId: p.user_id,
+            username: p.username,
+            chips: p.chips || 0,
+            position: idx + 1,
+            isCurrentUser: p.user_id === currentUserId,
+          })).sort((a: any, b: any) => b.chips - a.chips)}
+          onReturnToTournament={handleReturnToTournament}
+          countdown={5}
+        />
+      )}
+
+      {/* Game Complete Modal - For cash game completion */}
+      {showGameComplete && tableState?.players && (
+        <GameCompleteModal
+          show={showGameComplete}
+          standings={tableState.players.map((p: any) => ({
+            playerId: p.user_id,
+            username: p.username,
+            chips: p.chips || 0,
+            profit: (p.chips || 0) - 1000, // Buy-in amount
+            isCurrentUser: p.user_id === currentUserId,
+          }))}
           onPlayAgain={handlePlayAgain}
           onReturnToLobby={handleReturnToLobby}
         />
