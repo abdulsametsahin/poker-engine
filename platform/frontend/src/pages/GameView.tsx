@@ -255,15 +255,28 @@ export const GameView: React.FC = () => {
       if (tableState?.status !== newState.status) {
         // Track state change in history (optional - can be removed if not needed)
         if (newState.status === 'playing' && tableState?.status !== 'playing') {
-          // Add hand_started event to history
-          setHistory(prev => [...prev, {
-            id: `hand_started-${Date.now()}`,
-            eventType: 'hand_started',
-            timestamp: new Date(),
-            metadata: {
-              hand_number: prev.length + 1, // Simple hand counter
-            },
-          }]);
+          // Add hand_started event to history with deduplication
+          setHistory(prev => {
+            // Check if we already have a very recent hand_started event (within 1 second)
+            const now = Date.now();
+            const recentHandStart = prev.some(entry =>
+              entry.eventType === 'hand_started' &&
+              now - new Date(entry.timestamp).getTime() < 1000
+            );
+
+            if (recentHandStart) {
+              return prev; // Skip duplicate
+            }
+
+            return [...prev, {
+              id: `hand_started-${Date.now()}`,
+              eventType: 'hand_started',
+              timestamp: new Date(),
+              metadata: {
+                hand_number: prev.length + 1, // Simple hand counter
+              },
+            }];
+          });
         }
       }
 
@@ -271,18 +284,32 @@ export const GameView: React.FC = () => {
       if (tableState?.betting_round !== newState.betting_round && newState.betting_round) {
         const communityCards = newState.community_cards || [];
 
-        // Add round_advanced event to history (for flop, turn, river)
+        // Add round_advanced event to history (for flop, turn, river) with deduplication
         if (newState.betting_round !== 'preflop' && newState.betting_round !== 'waiting') {
-          setHistory(prev => [...prev, {
-            id: `round_advanced-${Date.now()}`,
-            eventType: 'round_advanced',
-            timestamp: new Date(),
-            metadata: {
-              new_round: newState.betting_round,
-              round: newState.betting_round,
-              community_cards: communityCards,
-            },
-          }]);
+          setHistory(prev => {
+            // Check if we already have a recent round_advanced event for this specific round
+            const now = Date.now();
+            const recentRoundAdvance = prev.some(entry =>
+              entry.eventType === 'round_advanced' &&
+              entry.metadata?.round === newState.betting_round &&
+              now - new Date(entry.timestamp).getTime() < 1000
+            );
+
+            if (recentRoundAdvance) {
+              return prev; // Skip duplicate
+            }
+
+            return [...prev, {
+              id: `round_advanced-${Date.now()}`,
+              eventType: 'round_advanced',
+              timestamp: new Date(),
+              metadata: {
+                new_round: newState.betting_round,
+                round: newState.betting_round,
+                community_cards: communityCards,
+              },
+            }];
+          });
         }
       }
 
@@ -297,17 +324,30 @@ export const GameView: React.FC = () => {
         const cardsStr = communityCards.length > 0 ? ` - Board: ${communityCards.join(' ')}` : '';
         setShowHandComplete(true);
 
-        // Add hand_complete event to history
-        setHistory(prev => [...prev, {
-          id: `hand_complete-${Date.now()}`,
-          eventType: 'hand_complete',
-          timestamp: new Date(),
-          metadata: {
-            winners: newState.winners,
-            final_pot: newState.pot,
-            pot: newState.pot,
-          },
-        }]);
+        // Add hand_complete event to history with deduplication
+        setHistory(prev => {
+          // Check if we already have a very recent hand_complete event (within 1 second)
+          const now = Date.now();
+          const recentHandComplete = prev.some(entry =>
+            entry.eventType === 'hand_complete' &&
+            now - new Date(entry.timestamp).getTime() < 1000
+          );
+
+          if (recentHandComplete) {
+            return prev; // Skip duplicate
+          }
+
+          return [...prev, {
+            id: `hand_complete-${Date.now()}`,
+            eventType: 'hand_complete',
+            timestamp: new Date(),
+            metadata: {
+              winners: newState.winners,
+              final_pot: newState.pot,
+              pot: newState.pot,
+            },
+          }];
+        });
       }
     };
 
