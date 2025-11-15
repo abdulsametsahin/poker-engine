@@ -216,11 +216,21 @@ func (et *EliminationTracker) CompleteTournament(tournamentID string) error {
 	if et.prizeDistributor != nil {
 		// Check if prizes haven't been distributed yet
 		distributed, err := et.prizeDistributor.HasPrizesBeenDistributed(tournamentID)
-		if err == nil && !distributed {
+		if err != nil {
+			log.Printf("ERROR: Failed to check prize distribution status for tournament %s: %v", tournamentID, err)
+		} else if !distributed {
+			log.Printf("Tournament %s: Starting prize distribution...", tournamentID)
 			if err := et.prizeDistributor.DistributePrizes(tournamentID); err != nil {
-				log.Printf("Error distributing prizes for tournament %s: %v", tournamentID, err)
+				log.Printf("ERROR: Failed to distribute prizes for tournament %s: %v", tournamentID, err)
+				// Don't return error - tournament is already completed
+			} else {
+				log.Printf("Tournament %s: Prizes distributed successfully", tournamentID)
 			}
+		} else {
+			log.Printf("Tournament %s: Prizes already distributed", tournamentID)
 		}
+	} else {
+		log.Printf("WARNING: Tournament %s: No prize distributor set!", tournamentID)
 	}
 
 	// Call callback
